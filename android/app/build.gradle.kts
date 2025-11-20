@@ -7,7 +7,7 @@ plugins {
 android {
     namespace = "com.example.eu_trading_app"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = "27.0.12077973"
+    ndkVersion = "28.2.13676358"  // UPDATE THIS LINE BRO!
     
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -24,6 +24,7 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        multiDexEnabled = true  // ADD THIS LINE BRO!
     }
     
     buildTypes {
@@ -35,4 +36,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("androidx.multidex:multidex:2.0.1")  // ADD THIS LINE BRO!
 }

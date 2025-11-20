@@ -15,16 +15,19 @@ dependencies:
   http: ^1.2.0
   intl: ^0.19.0
   shared_preferences: ^2.2.2
-  speech_to_text: ^7.0.0
+  # speech_to_text: ^7.0.0  # COMMENT OUT THIS LINE FOR NOW BRO!
   share_plus: ^7.2.0
   flutter_tts: ^4.1.0
   fl_chart: ^0.66.0
   country_code_picker: ^3.0.0
+  json_annotation: ^4.8.1  # ADD THIS LINE BRO!
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  build_runner: ^2.4.7  # ADD THIS LINE BRO!
+  json_serializable: ^6.7.1  # ADD THIS LINE BRO!
 
 flutter:
   uses-material-design: true

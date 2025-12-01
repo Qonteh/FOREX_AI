@@ -17,8 +17,7 @@ import 'screens/pricing/pricing_screen.dart';
 import 'screens/settings/settings_screen.dart';
 import 'theme/app_colors.dart';
 import 'screens/forex/forex_markets_screen.dart';
-import 'screens/affiliate/affiliate_screen.dart'; // Add this import
-
+import 'screens/affiliate/affiliate_screen.dart';
 
 void main() {
   runApp(const MyApp());
@@ -40,7 +39,7 @@ class MyApp extends StatelessWidget {
             title: 'Quantis Trading App',
             debugShowCheckedModeBanner: false,
             theme: ThemeData(
-              // LIGHT THEME - Beautiful with logo colors
+              // FORCE WHITE THEME BRO! NO MORE PURPLE BACKGROUND!
               colorScheme: const ColorScheme.light(
                 brightness: Brightness.light,
                 primary: AppColors.primaryPurple,
@@ -49,17 +48,17 @@ class MyApp extends StatelessWidget {
                 onSecondary: Colors.white,
                 error: Colors.red,
                 onError: Colors.white,
-                background: AppColors.lightGray,
+                background: Colors.white,        // FORCE WHITE BRO!
                 onBackground: AppColors.primaryNavy,
-                surface: Colors.white,
+                surface: Colors.white,           // FORCE WHITE BRO!
                 onSurface: AppColors.primaryNavy,
               ),
               useMaterial3: true,
-              scaffoldBackgroundColor: AppColors.lightGray,
-              canvasColor: Colors.white,
+              scaffoldBackgroundColor: Colors.white,  // FORCE WHITE BRO!
+              canvasColor: Colors.white,              // FORCE WHITE BRO!
               
               appBarTheme: const AppBarTheme(
-                backgroundColor: Colors.white,
+                backgroundColor: Colors.white,        // FORCE WHITE BRO!
                 foregroundColor: AppColors.primaryNavy,
                 elevation: 0,
                 centerTitle: true,
@@ -86,7 +85,7 @@ class MyApp extends StatelessWidget {
               ),
               
               cardTheme: CardThemeData(
-                color: Colors.white,
+                color: Colors.white,               // FORCE WHITE BRO!
                 elevation: 2,
                 shadowColor: AppColors.primaryPurple.withOpacity(0.1),
                 shape: RoundedRectangleBorder(
@@ -173,7 +172,7 @@ class MyApp extends StatelessWidget {
               ),
             ),
             
-            themeMode: themeProvider.themeMode,
+            themeMode: ThemeMode.light,  // FORCE LIGHT MODE BRO!
             routerConfig: _router,
           );
         },

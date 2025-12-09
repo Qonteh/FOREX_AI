@@ -8,9 +8,10 @@ from typing import Generator
 import os
 
 # Database URL from environment variable with fallback
+# Supports both MySQL and PostgreSQL
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/forex_ai"
+    "mysql+pymysql://root:password@localhost:3306/forex_ai"
 )
 
 # Create SQLAlchemy engine

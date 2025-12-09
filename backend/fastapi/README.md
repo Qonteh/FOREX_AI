@@ -13,34 +13,35 @@ FastAPI backend for FOREX AI Trading Application with user authentication and ph
 
 ## Requirements
 
-- Python 3.9+
-- PostgreSQL 12+
-- pip or poetry for package management
+- Python 3.9-3.12 (Python 3.14+ not recommended due to limited package support)
+- MySQL 5.7+ or MariaDB 10.3+ (PostgreSQL also supported)
+- pip for package management
 
 ## Installation
 
 ### 1. Install Dependencies
 
-#### Linux/macOS
+#### All Platforms
 
 ```bash
 cd backend/fastapi
-pip install -r requirements.txt
-```
-
-#### Windows
-
-On Windows, you may need to upgrade pip first to ensure pre-built wheels are used:
-
-```bash
-cd backend\fastapi
 python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-**Troubleshooting on Windows:**
+**Important for Python 3.14 users:**
 
-If you encounter a `pg_config executable not found` error with `psycopg2-binary`:
+If you're using Python 3.14 and encounter Rust/Cargo compilation errors with bcrypt:
+
+1. **Recommended**: Downgrade to Python 3.12 or 3.11 for better compatibility
+2. **Alternative**: Install bcrypt pre-built wheel manually:
+   ```bash
+   pip install bcrypt==4.2.0  # Has pre-built wheels for more Python versions
+   ```
+
+**Troubleshooting:**
+
+If you encounter any compilation errors:
 
 1. **Upgrade pip**: Make sure you have the latest pip version:
    ```bash
@@ -52,36 +53,56 @@ If you encounter a `pg_config executable not found` error with `psycopg2-binary`
    pip install wheel
    ```
 
-3. **Use Python 3.9-3.12**: psycopg2-binary 2.9.11 has pre-built wheels for Python 3.9-3.12. Check your version:
+3. **Check Python version**: Use Python 3.9-3.12 for best compatibility:
    ```bash
    python --version
    ```
 
-4. **Alternative**: If issues persist, you can use `psycopg` (version 3) instead:
-   ```bash
-   # Edit requirements.txt and replace psycopg2-binary with:
-   psycopg[binary]==3.1.19
-   ```
-   Then update `backend/fastapi/app/database.py` to use `postgresql+psycopg` instead of `postgresql` in DATABASE_URL.
-
 ### 2. Database Setup
 
-#### Create Database
+#### MySQL (Default)
 
 ```bash
-# Connect to PostgreSQL
-psql -U postgres
+# Connect to MySQL
+mysql -u root -p
 
 # Create database
-CREATE DATABASE forex_ai;
+CREATE DATABASE forex_ai CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 
-# Exit psql
-\q
+# Exit MySQL
+exit;
 ```
+
+#### PostgreSQL (Alternative)
+
+If you prefer PostgreSQL instead of MySQL:
+
+1. Edit `backend/fastapi/app/database.py` and change DATABASE_URL default to:
+   ```python
+   DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/forex_ai")
+   ```
+
+2. Install PostgreSQL driver:
+   ```bash
+   pip install psycopg2-binary==2.9.11
+   ```
+
+3. Create database:
+   ```bash
+   psql -U postgres
+   CREATE DATABASE forex_ai;
+   \q
+   ```
 
 #### Initialize Database Schema
 
-For a fresh installation:
+For a fresh MySQL installation:
+
+```bash
+mysql -u root -p forex_ai < db/init.sql
+```
+
+For PostgreSQL:
 
 ```bash
 psql -U postgres -d forex_ai -f db/init.sql
@@ -91,6 +112,12 @@ psql -U postgres -d forex_ai -f db/init.sql
 
 If you already have a users table without the phone field:
 
+**MySQL:**
+```bash
+mysql -u root -p forex_ai < db/migrations/001_add_phone_to_users.sql
+```
+
+**PostgreSQL:**
 ```bash
 psql -U postgres -d forex_ai -f db/migrations/001_add_phone_to_users.sql
 ```
@@ -99,6 +126,13 @@ psql -U postgres -d forex_ai -f db/migrations/001_add_phone_to_users.sql
 
 Create a `.env` file in the `backend/fastapi` directory:
 
+**For MySQL (default):**
+```env
+DATABASE_URL=mysql+pymysql://root:password@localhost:3306/forex_ai
+SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
+```
+
+**For PostgreSQL:**
 ```env
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/forex_ai
 SECRET_KEY=your-super-secret-jwt-key-change-this-in-production

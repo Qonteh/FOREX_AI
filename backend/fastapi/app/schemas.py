@@ -19,7 +19,7 @@ class UserCreate(UserBase):
     The 'tel' field is aliased to 'phone' internally.
     """
     password: str = Field(..., min_length=6)
-    phone: str = Field(..., min_length=10, max_length=32, validation_alias='tel')
+    phone: str = Field(..., validation_alias='tel')
     
     @field_validator('phone')
     @classmethod

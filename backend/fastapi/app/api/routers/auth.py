@@ -83,7 +83,7 @@ async def register(
     return Token(
         access_token=access_token,
         token_type="bearer",
-        user=UserOut.from_orm(user)
+        user=UserOut.model_validate(user)
     )
 
 
@@ -120,7 +120,7 @@ async def login(
     return Token(
         access_token=access_token,
         token_type="bearer",
-        user=UserOut.from_orm(user)
+        user=UserOut.model_validate(user)
     )
 
 
@@ -159,4 +159,4 @@ async def get_current_user(
             detail="User not found"
         )
     
-    return UserOut.from_orm(user)
+    return UserOut.model_validate(user)

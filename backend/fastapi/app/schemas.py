@@ -1,7 +1,7 @@
 """
 Pydantic schemas for request/response validation.
 """
-from pydantic import BaseModel, EmailStr, Field, validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from datetime import datetime
 from typing import Optional
 
@@ -19,10 +19,11 @@ class UserCreate(UserBase):
     The 'tel' field is aliased to 'phone' internally.
     """
     password: str = Field(..., min_length=6)
-    phone: str = Field(..., min_length=10, max_length=32, alias='tel')
+    phone: str = Field(..., min_length=10, max_length=32, validation_alias='tel')
     
-    @validator('phone', pre=True, always=True)
-    def validate_phone(cls, v, values):
+    @field_validator('phone')
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
         """Validate phone number format."""
         if not v:
             raise ValueError('Phone number is required')
@@ -34,11 +35,10 @@ class UserCreate(UserBase):
             raise ValueError('Phone number cannot exceed 15 digits')
         return v
     
-    class Config:
+    model_config = ConfigDict(
         # Allow population by field name or alias
-        populate_by_name = True
-        # Accept both 'phone' and 'tel' in input
-        schema_extra = {
+        populate_by_name=True,
+        json_schema_extra={
             "example": {
                 "email": "user@example.com",
                 "name": "John Doe",
@@ -46,6 +46,7 @@ class UserCreate(UserBase):
                 "password": "securepass123"
             }
         }
+    )
 
 
 class UserOut(UserBase):
@@ -57,9 +58,9 @@ class UserOut(UserBase):
     created_at: datetime
     updated_at: datetime
     
-    class Config:
-        from_attributes = True
-        schema_extra = {
+    model_config = ConfigDict(
+        from_attributes=True,
+        json_schema_extra={
             "example": {
                 "id": "123e4567-e89b-12d3-a456-426614174000",
                 "email": "user@example.com",
@@ -71,6 +72,7 @@ class UserOut(UserBase):
                 "updated_at": "2023-01-01T00:00:00"
             }
         }
+    )
 
 
 class UserLogin(BaseModel):

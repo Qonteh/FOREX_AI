@@ -8,9 +8,6 @@ from app.core.config import settings
 from app.db.session import Base, engine
 from app.api.routers import auth, affiliates, wallet
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
-
 # Create FastAPI application
 app = FastAPI(
     title="FOREX AI Backend API",
@@ -60,5 +57,10 @@ async def startup_event():
     Creates database tables if they don't exist.
     """
     print("Starting FOREX AI Backend API...")
-    print(f"Database URL: {settings.database_url.split('@')[1]}")  # Print without credentials
-    print("Database tables created successfully!")
+    try:
+        print(f"Database URL: {settings.database_url.split('@')[1]}")  # Print without credentials
+        Base.metadata.create_all(bind=engine)
+        print("Database tables created successfully!")
+    except Exception as e:
+        print(f"Warning: Could not create database tables: {e}")
+        print("Make sure MySQL is running and database exists before using the API.")

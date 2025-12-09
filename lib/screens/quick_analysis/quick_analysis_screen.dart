@@ -1,13 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
+import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'dart:async';
 import 'dart:math';
 import '../../theme/app_colors.dart';
 
-// Use your actual API keys
-const String OPENAI_API_KEY = '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';
+// API Configuration
+const String DERIV_API_TOKEN = '2BqbsdE4NSUtzlm'; // Your Deriv token
+const String DERIV_APP_ID = '115360';
+const String DERIV_WS_URL = 'wss://ws.binaryws.com/websockets/v3';
+const String DERIV_API_URL = 'https://api.deriv.com';
 
 class QuickAnalysisScreen extends StatefulWidget {
   const QuickAnalysisScreen({super.key});
@@ -25,11 +29,15 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
   List<CandlestickData> _candlestickData = [];
   bool _isLoadingPrices = true;
   bool _isAnalyzing = false;
-  Timer? _priceTimer;
   
-  // Real-time data
-  final Map<String, List<double>> _priceHistory = {};
-  final int _maxHistoryPoints = 50;
+  // Deriv WebSocket connection
+  WebSocketChannel? _derivChannel;
+  StreamSubscription? _derivSubscription;
+  
+  // Real-time data tracking
+  final Map<String, double> _lastPrices = {};
+  final Map<String, List<PriceUpdate>> _realtimePriceData = {};
+  Timer? _chartUpdateTimer;
   
   AnalysisResult? _analysisResult;
   
@@ -45,6 +53,7 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
   double _chartScale = 1.0;
   double _chartTranslateX = 0.0;
   double _chartTranslateY = 0.0;
+  Offset _dragStart = Offset.zero;
 
   // Scanning animation
   double _scanPosition = 0.0;
@@ -52,16 +61,36 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
   Timer? _scanTimer;
   List<ScanningParticle> _scanningParticles = [];
 
+  // Deriv supported symbols
+  final Map<String, String> _derivSymbols = {
+    'EUR/USD': 'frxEURUSD',
+    'GBP/USD': 'frxGBPUSD',
+    'USD/JPY': 'frxUSDJPY',
+    'USD/CHF': 'frxUSDCHF',
+    'AUD/USD': 'frxAUDUSD',
+    'USD/CAD': 'frxUSDCAD',
+    'XAU/USD': 'frxXAUUSD',
+    'XAG/USD': 'frxXAGUSD',
+    'BTC/USD': 'cryBTCUSD',
+    'ETH/USD': 'cryETHUSD',
+  };
+
+  final Map<String, int> _timeframeToSeconds = {
+    'M1': 60,
+    'M5': 300,
+    'M15': 900,
+    'M30': 1800,
+    'H1': 3600,
+    'H4': 14400,
+    'D': 86400,
+  };
+
   final List<String> currencyPairs = [
-    'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD', 'NZD/USD',
-    'EUR/GBP', 'EUR/JPY', 'EUR/CHF', 'EUR/AUD', 'EUR/CAD', 'EUR/NZD',
-    'GBP/JPY', 'GBP/CHF', 'GBP/AUD', 'GBP/CAD', 'GBP/NZD',
-    'AUD/JPY', 'AUD/CHF', 'AUD/CAD', 'AUD/NZD',
-    'CAD/JPY', 'CAD/CHF', 'CHF/JPY', 'NZD/JPY', 'NZD/CHF', 'NZD/CAD',
+    'EUR/USD', 'GBP/USD', 'USD/JPY', 'USD/CHF', 'AUD/USD', 'USD/CAD',
     'XAU/USD', 'XAG/USD', 'BTC/USD', 'ETH/USD',
   ];
 
-  final List<String> timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D', 'W'];
+  final List<String> timeframes = ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D'];
 
   @override
   void initState() {
@@ -96,85 +125,200 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
       CurvedAnimation(parent: _scanAnimationController, curve: Curves.easeInOut),
     );
     
-    // Start with simulated data
-    _loadInitialPrices();
-    _generateRealisticCandlestickData();
+    // Connect to Deriv WebSocket
+    _connectToDeriv();
+    
+    // Start animations
     _chartAnimationController.forward();
     
-    // Start real-time updates
-    _startRealTimeUpdates();
+    // Start chart update timer
+    _startChartUpdates();
   }
 
-  void _startRealTimeUpdates() {
-    // Update prices every second for real-time feel
-    _priceTimer = Timer.periodic(const Duration(milliseconds: 1000), (timer) {
-      _updateRealTimePrices();
+  void _startChartUpdates() {
+    _chartUpdateTimer = Timer.periodic(const Duration(milliseconds: 500), (timer) {
+      if (mounted) {
+        setState(() {
+          // This triggers chart repaint
+        });
+      }
     });
   }
 
-  void _updateRealTimePrices() {
-    if (!mounted) return;
-    
-    final updatedPrices = Map<String, RealCurrencyData>.from(_realPrices);
-    final random = Random();
-    final now = DateTime.now();
-    
-    updatedPrices.forEach((symbol, data) {
-      final volatility = _getVolatilityForPair(symbol);
+  Future<void> _connectToDeriv() async {
+    try {
+      // Close existing connection if any
+      await _disconnectFromDeriv();
       
-      // More realistic price movement with momentum
-      final momentum = data.changePercent.abs() * 0.1;
-      final direction = data.isPositive ? 1 : -1;
-      final change = (random.nextDouble() * volatility * 0.05 * direction) + (momentum * direction * 0.1);
-      
-      final newPrice = (data.price + change).clamp(data.price * 0.99, data.price * 1.01);
-      final newChange = newPrice - _getBasePrice(symbol);
-      final changePercent = _getBasePrice(symbol) > 0 ? (newChange / _getBasePrice(symbol)) * 100 : 0.0;
-      
-      // Update price history
-      if (!_priceHistory.containsKey(symbol)) {
-        _priceHistory[symbol] = [];
-      }
-      final history = _priceHistory[symbol]!;
-      history.add(newPrice);
-      if (history.length > _maxHistoryPoints) {
-        history.removeAt(0);
-      }
-      
-      updatedPrices[symbol] = RealCurrencyData(
-        symbol: symbol,
-        price: newPrice,
-        change: newChange,
-        changePercent: changePercent,
-        isPositive: newChange >= 0,
-        lastUpdated: now,
-        priceHistory: List.from(history),
+      // Create new WebSocket connection
+      _derivChannel = WebSocketChannel.connect(
+        Uri.parse('$DERIV_WS_URL?app_id=$DERIV_APP_ID'),
       );
-    });
+      
+      // Authorize with API token
+      _derivChannel!.sink.add(json.encode({
+        'authorize': DERIV_API_TOKEN,
+      }));
+      
+      // Listen for responses
+      _derivSubscription = _derivChannel!.stream.listen(
+        (message) {
+          _handleDerivMessage(message);
+        },
+        onError: (error) {
+          print('Deriv WebSocket error: $error');
+          _reconnectToDeriv();
+        },
+        onDone: () {
+          print('Deriv WebSocket closed');
+          _reconnectToDeriv();
+        },
+      );
+      
+    } catch (e) {
+      print('Failed to connect to Deriv: $e');
+      // Start with simulated data but keep trying to reconnect
+      _startWithSimulatedData();
+      _reconnectToDeriv();
+    }
+  }
+
+  void _handleDerivMessage(dynamic message) {
+    try {
+      final data = json.decode(message);
+      
+      if (data['msg_type'] == 'authorize') {
+        if (data['error'] != null) {
+          print('Deriv authorization error: ${data['error']['message']}');
+          _startWithSimulatedData();
+          return;
+        }
+        print('✅ Successfully authorized with Deriv API');
+        
+        // Subscribe to all symbols
+        _subscribeToAllSymbols();
+        
+      } else if (data['msg_type'] == 'tick') {
+        _handleTickUpdate(data['tick']);
+        
+      } else if (data['msg_type'] == 'ohlc') {
+        _handleOHLCUpdate(data['ohlc']);
+        
+      } else if (data['msg_type'] == 'history') {
+        _handleHistoryData(data['history']);
+        
+      } else if (data['msg_type'] == 'candles') {
+        _handleCandlesData(data['candles']);
+      }
+    } catch (e) {
+      print('Error handling Deriv message: $e');
+    }
+  }
+
+  void _handleTickUpdate(Map<String, dynamic> tick) {
+    final symbol = tick['symbol'];
+    final quote = tick['quote'];
+    final epoch = tick['epoch'];
     
-    // Update candlestick data for selected pair
-    if (_candlestickData.isNotEmpty) {
-      final lastCandle = _candlestickData.last;
-      final currentPrice = updatedPrices[selectedPair]?.price ?? lastCandle.close;
-      final volatility = _getVolatilityForPair(selectedPair);
-      
-      // Create new candle based on time
+    if (quote != null && symbol != null) {
+      final double price = double.parse(quote);
+      final displaySymbol = _getDisplaySymbol(symbol);
       final now = DateTime.now();
-      final isNewCandle = now.difference(lastCandle.time).inMinutes >= _getTimeframeMinutes();
       
-      CandlestickData newCandle;
+      // Store real-time price update
+      if (!_realtimePriceData.containsKey(displaySymbol)) {
+        _realtimePriceData[displaySymbol] = [];
+      }
       
-      if (isNewCandle) {
-        // Start new candle
-        newCandle = CandlestickData(
-          time: now,
-          open: currentPrice,
-          high: currentPrice,
-          low: currentPrice,
-          close: currentPrice,
-          volume: 1000 + random.nextDouble() * 5000,
+      _realtimePriceData[displaySymbol]!.add(PriceUpdate(
+        price: price,
+        timestamp: now,
+      ));
+      
+      // Keep only last 100 updates
+      if (_realtimePriceData[displaySymbol]!.length > 100) {
+        _realtimePriceData[displaySymbol]!.removeAt(0);
+      }
+      
+      // Calculate change from previous price
+      double change = 0.0;
+      double changePercent = 0.0;
+      
+      if (_lastPrices.containsKey(displaySymbol)) {
+        final lastPrice = _lastPrices[displaySymbol]!;
+        change = price - lastPrice;
+        changePercent = (change / lastPrice) * 100;
+      }
+      
+      _lastPrices[displaySymbol] = price;
+      
+      // Update price history for line chart
+      if (!_realPrices.containsKey(displaySymbol)) {
+        _realPrices[displaySymbol] = RealCurrencyData(
+          symbol: displaySymbol,
+          price: price,
+          change: change,
+          changePercent: changePercent,
+          isPositive: change >= 0,
+          lastUpdated: now,
+          priceHistory: [price],
         );
-        _candlestickData.add(newCandle);
+      } else {
+        final existing = _realPrices[displaySymbol]!;
+        final history = List<double>.from(existing.priceHistory)..add(price);
+        if (history.length > 50) history.removeAt(0);
+        
+        _realPrices[displaySymbol] = RealCurrencyData(
+          symbol: displaySymbol,
+          price: price,
+          change: change,
+          changePercent: changePercent,
+          isPositive: change >= 0,
+          lastUpdated: now,
+          priceHistory: history,
+        );
+      }
+      
+      // Update current candle for selected pair
+      if (displaySymbol == selectedPair) {
+        _updateCurrentCandle(price, now);
+      }
+      
+      if (mounted) {
+        setState(() {
+          _isLoadingPrices = false;
+        });
+      }
+    }
+  }
+
+  void _updateCurrentCandle(double price, DateTime timestamp) {
+    if (_candlestickData.isEmpty) {
+      // Create first candle
+      _candlestickData.add(CandlestickData(
+        time: timestamp,
+        open: price,
+        high: price,
+        low: price,
+        close: price,
+        volume: 1000,
+      ));
+    } else {
+      final lastCandle = _candlestickData.last;
+      final timeframeSeconds = _timeframeToSeconds[selectedTimeframe] ?? 3600;
+      final currentTime = timestamp;
+      final lastCandleEndTime = lastCandle.time.add(Duration(seconds: timeframeSeconds));
+      
+      if (currentTime.isAfter(lastCandleEndTime)) {
+        // Create new candle
+        _candlestickData.add(CandlestickData(
+          time: currentTime,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: 1000,
+        ));
         
         // Keep only last 100 candles
         if (_candlestickData.length > 100) {
@@ -182,114 +326,203 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
         }
       } else {
         // Update current candle
-        newCandle = CandlestickData(
+        _candlestickData[_candlestickData.length - 1] = CandlestickData(
           time: lastCandle.time,
           open: lastCandle.open,
-          high: max(lastCandle.high, currentPrice),
-          low: min(lastCandle.low, currentPrice),
-          close: currentPrice,
-          volume: lastCandle.volume + random.nextDouble() * 100,
+          high: max(lastCandle.high, price),
+          low: min(lastCandle.low, price),
+          close: price,
+          volume: lastCandle.volume + 100,
         );
-        _candlestickData[_candlestickData.length - 1] = newCandle;
+      }
+    }
+    
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _handleOHLCUpdate(Map<String, dynamic> ohlc) {
+    // Handle OHLC updates from Deriv
+    print('OHLC update received: $ohlc');
+  }
+
+  void _handleHistoryData(Map<String, dynamic> history) {
+    final prices = history['prices'] as List<dynamic>?;
+    if (prices != null && prices.isNotEmpty) {
+      _candlestickData.clear();
+      
+      for (final price in prices.reversed) {
+        final candle = CandlestickData(
+          time: DateTime.fromMillisecondsSinceEpoch(price['epoch'] * 1000),
+          open: double.parse(price['open']),
+          high: double.parse(price['high']),
+          low: double.parse(price['low']),
+          close: double.parse(price['close']),
+          volume: 1000,
+        );
+        _candlestickData.add(candle);
       }
       
-      setState(() {
-        _realPrices = updatedPrices;
-      });
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
-  int _getTimeframeMinutes() {
-    switch (selectedTimeframe) {
-      case 'M1': return 1;
-      case 'M5': return 5;
-      case 'M15': return 15;
-      case 'M30': return 30;
-      case 'H1': return 60;
-      case 'H4': return 240;
-      case 'D': return 1440;
-      case 'W': return 10080;
-      default: return 60;
+  void _handleCandlesData(Map<String, dynamic> candles) {
+    final candlesList = candles['candles'] as List<dynamic>?;
+    if (candlesList != null) {
+      _candlestickData.clear();
+      
+      for (final candle in candlesList.reversed) {
+        _candlestickData.add(CandlestickData(
+          time: DateTime.fromMillisecondsSinceEpoch(candle['epoch'] * 1000),
+          open: double.parse(candle['open']),
+          high: double.parse(candle['high']),
+          low: double.parse(candle['low']),
+          close: double.parse(candle['close']),
+          volume: 1000,
+        ));
+      }
+      
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
-  void _loadInitialPrices() {
+  void _subscribeToAllSymbols() {
+    // Subscribe to tick updates for all symbols
+    for (final displaySymbol in currencyPairs) {
+      final derivSymbol = _derivSymbols[displaySymbol];
+      if (derivSymbol != null) {
+        _derivChannel!.sink.add(json.encode({
+          'ticks': derivSymbol,
+          'subscribe': 1,
+        }));
+      }
+    }
+    
+    // Load historical data for selected pair
+    _loadHistoricalData();
+  }
+
+  void _loadHistoricalData() {
+    final derivSymbol = _derivSymbols[selectedPair];
+    if (derivSymbol != null && _derivChannel != null) {
+      final seconds = _timeframeToSeconds[selectedTimeframe] ?? 3600;
+      
+      _derivChannel!.sink.add(json.encode({
+        'ticks_history': derivSymbol,
+        'adjust_start_time': 1,
+        'count': 100,
+        'end': 'latest',
+        'start': 1,
+        'style': 'candles',
+        'granularity': seconds,
+      }));
+    }
+  }
+
+  void _startWithSimulatedData() {
+    // Start with realistic simulated data
+    _loadRealisticSimulatedData();
+    
+    // Start simulated price updates
+    Timer.periodic(const Duration(seconds: 2), (timer) {
+      if (!mounted || _derivChannel?.closeCode == null) {
+        timer.cancel();
+        return;
+      }
+      
+      _updateSimulatedPrices();
+    });
+  }
+
+  void _loadRealisticSimulatedData() {
     final now = DateTime.now();
     final random = Random();
     
-    final prices = <String, RealCurrencyData>{};
+    // Realistic base prices
+    final basePrices = {
+      'EUR/USD': 1.0850,
+      'GBP/USD': 1.2650,
+      'USD/JPY': 149.50,
+      'USD/CHF': 0.8800,
+      'AUD/USD': 0.6550,
+      'USD/CAD': 1.3500,
+      'XAU/USD': 1980.0,
+      'XAG/USD': 23.50,
+      'BTC/USD': 43750.0,
+      'ETH/USD': 2650.0,
+    };
     
+    // Generate initial prices with realistic variations
     for (final pair in currencyPairs) {
-      final basePrice = _getBasePrice(pair);
-      final initialPrice = basePrice + (random.nextDouble() - 0.5) * basePrice * 0.02;
-      final change = (random.nextDouble() - 0.5) * basePrice * 0.01;
+      final basePrice = basePrices[pair] ?? 1.0;
+      final initialPrice = basePrice + (random.nextDouble() - 0.5) * basePrice * 0.01;
+      final change = (random.nextDouble() - 0.5) * basePrice * 0.005;
       
-      prices[pair] = RealCurrencyData(
-        symbol: pair, 
+      // Generate realistic price history
+      final history = <double>[initialPrice];
+      double current = initialPrice;
+      for (int i = 0; i < 49; i++) {
+        final variation = (random.nextDouble() - 0.5) * basePrice * 0.002;
+        current += variation;
+        history.add(current);
+      }
+      
+      _realPrices[pair] = RealCurrencyData(
+        symbol: pair,
         price: initialPrice,
         change: change,
         changePercent: (change / basePrice) * 100,
         isPositive: change >= 0,
         lastUpdated: now,
-        priceHistory: _generateInitialHistory(initialPrice, pair),
+        priceHistory: history,
       );
+      
+      _lastPrices[pair] = initialPrice;
     }
     
+    // Generate realistic candlestick data for selected pair
+    _generateRealisticCandles();
+    
     setState(() {
-      _realPrices = prices;
       _isLoadingPrices = false;
     });
   }
 
-  List<double> _generateInitialHistory(double basePrice, String pair) {
-    final random = Random();
-    final history = <double>[];
-    final volatility = _getVolatilityForPair(pair);
-    double current = basePrice;
-    
-    for (int i = 0; i < 50; i++) {
-      current += (random.nextDouble() - 0.5) * volatility * 2;
-      history.add(current);
-    }
-    
-    return history;
-  }
-
-  void _generateRealisticCandlestickData() {
-    final currentPrice = _realPrices[selectedPair]?.price ?? _getBasePrice(selectedPair);
+  void _generateRealisticCandles() {
+    final basePrice = _realPrices[selectedPair]?.price ?? 1.0;
     final random = Random();
     final volatility = _getVolatilityForPair(selectedPair);
     
     _candlestickData.clear();
-    double basePrice = currentPrice;
+    final now = DateTime.now();
+    final timeframeSeconds = _timeframeToSeconds[selectedTimeframe] ?? 3600;
     
-    // Generate realistic market data with trends and patterns
-    double trend = 0.0;
-    int trendDuration = 0;
-    double previousClose = basePrice;
+    double currentPrice = basePrice;
     
+    // Generate 100 candles with realistic patterns
     for (int i = 0; i < 100; i++) {
-      // Change trend occasionally
-      if (trendDuration <= 0 || random.nextDouble() > 0.98) {
-        trend = (random.nextDouble() - 0.5) * volatility * 1.5;
-        trendDuration = 10 + random.nextInt(30);
-      }
-      trendDuration--;
+      final candleTime = now.subtract(Duration(seconds: (100 - i) * timeframeSeconds));
       
-      // Add some market noise and patterns
-      final noise = (random.nextDouble() - 0.5) * volatility * 0.8;
-      final pattern = sin(i * 0.3) * volatility * 0.3; // Sine wave pattern
+      // Create trends and patterns
+      final trend = sin(i * 0.1) * volatility * 0.5;
+      final noise = (random.nextDouble() - 0.5) * volatility;
       
-      final open = previousClose;
-      final close = open + trend + noise + pattern;
+      final open = currentPrice;
+      final close = open + trend + noise;
       
-      // Realistic wicks based on volatility and trend
-      final wickRange = volatility * (0.2 + random.nextDouble() * 0.4);
+      // Realistic wicks
+      final wickRange = volatility * (0.2 + random.nextDouble() * 0.3);
       final high = max(open, close) + wickRange * random.nextDouble();
       final low = min(open, close) - wickRange * random.nextDouble();
       
       _candlestickData.add(CandlestickData(
-        time: DateTime.now().subtract(Duration(minutes: (100 - i) * _getTimeframeMinutes())),
+        time: candleTime,
         open: open,
         high: high,
         low: low,
@@ -297,14 +530,305 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
         volume: 1000 + random.nextDouble() * 5000,
       ));
       
-      previousClose = close;
-      basePrice = close;
+      currentPrice = close;
     }
-    
-    setState(() {});
   }
 
-  // Beautiful scanning animation with particles
+  void _updateSimulatedPrices() {
+    final random = Random();
+    
+    for (final pair in currencyPairs) {
+      final currentData = _realPrices[pair];
+      if (currentData != null) {
+        final volatility = _getVolatilityForPair(pair);
+        final change = (random.nextDouble() - 0.5) * volatility * 0.1;
+        final newPrice = currentData.price + change;
+        final now = DateTime.now();
+        
+        // Update price history
+        final history = List<double>.from(currentData.priceHistory)..add(newPrice);
+        if (history.length > 50) history.removeAt(0);
+        
+        _realPrices[pair] = RealCurrencyData(
+          symbol: pair,
+          price: newPrice,
+          change: change,
+          changePercent: (change / currentData.price) * 100,
+          isPositive: change >= 0,
+          lastUpdated: now,
+          priceHistory: history,
+        );
+        
+        _lastPrices[pair] = newPrice;
+        
+        // Update candle for selected pair
+        if (pair == selectedPair) {
+          _updateCurrentCandle(newPrice, now);
+        }
+      }
+    }
+    
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  double _getVolatilityForPair(String pair) {
+    if (pair == 'XAU/USD') return 15.0;
+    if (pair == 'XAG/USD') return 0.5;
+    if (pair.contains('BTC')) return 400.0;
+    if (pair.contains('ETH')) return 150.0;
+    if (pair.contains('JPY')) return 0.8;
+    return 0.01;
+  }
+
+  void _reconnectToDeriv() {
+    Future.delayed(const Duration(seconds: 5), () {
+      if (mounted) {
+        _connectToDeriv();
+      }
+    });
+  }
+
+  Future<void> _disconnectFromDeriv() async {
+    await _derivSubscription?.cancel();
+    await _derivChannel?.sink.close();
+    _derivSubscription = null;
+    _derivChannel = null;
+  }
+
+  String _getDisplaySymbol(String derivSymbol) {
+    for (final entry in _derivSymbols.entries) {
+      if (entry.value == derivSymbol) {
+        return entry.key;
+      }
+    }
+    return derivSymbol;
+  }
+
+  void _onPairChanged(String? value) {
+    if (value != null && value != selectedPair) {
+      setState(() {
+        selectedPair = value;
+        _analysisResult = null;
+        _candlestickData.clear();
+      });
+      
+      // Load historical data for new pair
+      if (_derivChannel?.closeCode == null) {
+        _loadHistoricalData();
+      } else {
+        _generateRealisticCandles();
+      }
+    }
+  }
+
+  void _onTimeframeChanged(String? value) {
+    if (value != null && value != selectedTimeframe) {
+      setState(() {
+        selectedTimeframe = value;
+        _analysisResult = null;
+        _candlestickData.clear();
+      });
+      
+      // Load historical data with new timeframe
+      if (_derivChannel?.closeCode == null) {
+        _loadHistoricalData();
+      } else {
+        _generateRealisticCandles();
+      }
+    }
+  }
+
+  Future<void> _analyzeMarket() async {
+    setState(() {
+      _isAnalyzing = true;
+      _analysisResult = null;
+    });
+
+    _startScanningAnimation();
+
+    final currentData = _realPrices[selectedPair];
+    if (currentData == null) {
+      setState(() => _isAnalyzing = false);
+      return;
+    }
+
+    try {
+      // Simulate analysis with real data
+      await Future.delayed(const Duration(seconds: 3));
+      
+      final analysis = _generateAnalysis(currentData);
+      
+      if (mounted) {
+        setState(() {
+          _analysisResult = analysis;
+          _isAnalyzing = false;
+        });
+        
+        _analysisAnimationController.reset();
+        _analysisAnimationController.forward();
+      }
+      
+    } catch (e) {
+      print('Analysis failed: $e');
+      setState(() => _isAnalyzing = false);
+      
+      final analysis = _generateAnalysis(currentData);
+      setState(() {
+        _analysisResult = analysis;
+      });
+    }
+  }
+
+  AnalysisResult _generateAnalysis(RealCurrencyData data) {
+    final random = Random();
+    final technicals = _calculateTechnicalIndicators();
+    
+    // Determine signal based on technicals
+    String signal = 'HOLD';
+    double confidence = 50.0;
+    
+    final trend = technicals['trend'] ?? 'NEUTRAL';
+    final rsi = technicals['rsi'] ?? 50.0;
+    final trendStrength = technicals['trendStrength'] ?? 0.0;
+    
+    if (trend == 'BULLISH' && rsi < 70 && trendStrength > 0.5 && data.isPositive) {
+      signal = 'BUY';
+      confidence = 65.0 + random.nextDouble() * 25;
+    } else if (trend == 'BEARISH' && rsi > 30 && trendStrength > 0.5 && !data.isPositive) {
+      signal = 'SELL';
+      confidence = 65.0 + random.nextDouble() * 25;
+    }
+    
+    final reasons = [
+      '${trend} trend identified with ${trendStrength.toStringAsFixed(1)}% strength',
+      'RSI at ${rsi.toStringAsFixed(1)} indicates ${rsi > 70 ? 'overbought' : rsi < 30 ? 'oversold' : 'neutral'} conditions',
+      'Price action shows ${data.isPositive ? 'strength' : 'weakness'} in current trend',
+      'Real-time volatility: ${_calculateVolatility().toStringAsFixed(2)}%',
+    ];
+    
+    return AnalysisResult(
+      pair: selectedPair,
+      timeframe: selectedTimeframe,
+      signal: signal,
+      confidence: confidence.toInt(),
+      entry: _calculateEntryPrice(data.price, signal, technicals),
+      takeProfit: _calculateTakeProfit(data.price, signal, technicals),
+      stopLoss: _calculateStopLoss(data.price, signal, technicals),
+      reasons: reasons,
+      alternativeScenario: 'Monitor key levels for trend confirmation',
+      riskReward: _calculateRiskRewardRatio(signal, technicals),
+    );
+  }
+
+  Map<String, dynamic> _calculateTechnicalIndicators() {
+    if (_candlestickData.length < 20) return {};
+    
+    final prices = _candlestickData.map((c) => c.close).toList();
+    final highs = _candlestickData.map((c) => c.high).toList();
+    final lows = _candlestickData.map((c) => c.low).toList();
+    
+    // Calculate trend
+    final recentPrices = prices.sublist(prices.length - 10);
+    final olderPrices = prices.sublist(prices.length - 20, prices.length - 10);
+    final recentAvg = recentPrices.reduce((a, b) => a + b) / recentPrices.length;
+    final olderAvg = olderPrices.reduce((a, b) => a + b) / olderPrices.length;
+    final trend = recentAvg > olderAvg ? 'BULLISH' : 'BEARISH';
+    final trendStrength = ((recentAvg - olderAvg) / olderAvg * 100).abs();
+    
+    // Support/resistance
+    final recentHighs = highs.sublist(highs.length - 20);
+    final recentLows = lows.sublist(lows.length - 20);
+    final resistance = recentHighs.reduce(max);
+    final support = recentLows.reduce(min);
+    
+    // RSI calculation
+    double gains = 0, losses = 0;
+    for (int i = 1; i < prices.length; i++) {
+      final change = prices[i] - prices[i-1];
+      if (change > 0) {
+        gains += change;
+      } else {
+        losses -= change;
+      }
+    }
+    final rs = gains / (losses == 0 ? 1 : losses);
+    final rsi = 100 - (100 / (1 + rs));
+    
+    return {
+      'trend': trend,
+      'trendStrength': trendStrength,
+      'support': support,
+      'resistance': resistance,
+      'rsi': rsi,
+      'currentPrice': prices.last,
+    };
+  }
+
+  double _calculateEntryPrice(double currentPrice, String signal, Map<String, dynamic> technicals) {
+    if (signal == 'HOLD') return currentPrice;
+    
+    final support = technicals['support'] ?? currentPrice * 0.995;
+    final resistance = technicals['resistance'] ?? currentPrice * 1.005;
+    
+    if (signal == 'BUY') {
+      return min(currentPrice, support * 1.001);
+    } else {
+      return max(currentPrice, resistance * 0.999);
+    }
+  }
+
+  double _calculateTakeProfit(double currentPrice, String signal, Map<String, dynamic> technicals) {
+    if (signal == 'HOLD') return currentPrice;
+    
+    final support = technicals['support'] ?? currentPrice * 0.995;
+    final resistance = technicals['resistance'] ?? currentPrice * 1.005;
+    
+    if (signal == 'BUY') {
+      return resistance * 0.998;
+    } else {
+      return support * 1.002;
+    }
+  }
+
+  double _calculateStopLoss(double currentPrice, String signal, Map<String, dynamic> technicals) {
+    if (signal == 'HOLD') return currentPrice;
+    
+    final support = technicals['support'] ?? currentPrice * 0.995;
+    final resistance = technicals['resistance'] ?? currentPrice * 1.005;
+    
+    if (signal == 'BUY') {
+      return support * 0.998;
+    } else {
+      return resistance * 1.002;
+    }
+  }
+
+  double _calculateRiskRewardRatio(String signal, Map<String, dynamic> technicals) {
+    if (signal == 'HOLD') return 1.0;
+    
+    final currentPrice = technicals['currentPrice'] ?? 1.0;
+    final entry = _calculateEntryPrice(currentPrice, signal, technicals);
+    final takeProfit = _calculateTakeProfit(currentPrice, signal, technicals);
+    final stopLoss = _calculateStopLoss(currentPrice, signal, technicals);
+    
+    final profit = (takeProfit - entry).abs();
+    final risk = (entry - stopLoss).abs();
+    
+    return risk > 0 ? (profit / risk) : 1.0;
+  }
+
+  double _calculateVolatility() {
+    if (_candlestickData.length < 10) return 0.0;
+    final prices = _candlestickData.map((c) => c.close).toList();
+    double sum = 0.0;
+    for (int i = 1; i < prices.length; i++) {
+      sum += ((prices[i] - prices[i-1]) / prices[i-1]).abs();
+    }
+    return (sum / (prices.length - 1)) * 100;
+  }
+
   void _startScanningAnimation() {
     setState(() {
       _isScanning = true;
@@ -315,18 +839,19 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
     _scanAnimationController.reset();
     _scanAnimationController.repeat(reverse: true);
     
-    // Create initial particles
+    // Create particles
+    final random = Random();
     for (int i = 0; i < 20; i++) {
       _scanningParticles.add(ScanningParticle(
-        x: Random().nextDouble(),
-        y: Random().nextDouble(),
-        size: 2.0 + Random().nextDouble() * 4.0,
-        speed: 0.5 + Random().nextDouble() * 1.0,
-        opacity: 0.3 + Random().nextDouble() * 0.7,
+        x: random.nextDouble(),
+        y: random.nextDouble(),
+        size: 2.0 + random.nextDouble() * 4.0,
+        speed: 0.5 + random.nextDouble() * 1.0,
+        opacity: 0.3 + random.nextDouble() * 0.7,
       ));
     }
     
-    // Realistic scanning with particles
+    // Scanning animation
     int scanProgress = 0;
     _scanTimer = Timer.periodic(const Duration(milliseconds: 30), (timer) {
       setState(() {
@@ -339,23 +864,11 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
           particle.y += sin(particle.x * 10) * 0.005;
           particle.opacity = max(0.0, particle.opacity - 0.01);
           
-          // Reset particles that go off screen or fade out
           if (particle.x > 1.2 || particle.opacity <= 0) {
             particle.x = -0.2;
-            particle.y = Random().nextDouble();
-            particle.opacity = 0.3 + Random().nextDouble() * 0.7;
+            particle.y = random.nextDouble();
+            particle.opacity = 0.3 + random.nextDouble() * 0.7;
           }
-        }
-        
-        // Add new particles occasionally
-        if (Random().nextDouble() > 0.7 && _scanningParticles.length < 30) {
-          _scanningParticles.add(ScanningParticle(
-            x: Random().nextDouble() * 0.2 - 0.1,
-            y: Random().nextDouble(),
-            size: 2.0 + Random().nextDouble() * 4.0,
-            speed: 0.5 + Random().nextDouble() * 1.0,
-            opacity: 0.3 + Random().nextDouble() * 0.7,
-          ));
         }
       });
       
@@ -374,450 +887,10 @@ class _QuickAnalysisScreenState extends State<QuickAnalysisScreen>
     });
   }
 
-  // Enhanced AI analysis with real ChatGPT reasons
-  Future<void> _analyzeMarket() async {
-    setState(() {
-      _isAnalyzing = true;
-      _analysisResult = null;
-    });
-
-    _startScanningAnimation();
-
-    final currentData = _realPrices[selectedPair];
-    if (currentData == null) {
-      setState(() => _isAnalyzing = false);
-      return;
-    }
-
-    try {
-      // Calculate technical indicators
-      final technicalAnalysis = _calculateTechnicalIndicators();
-      
-      final marketSummary = _prepareProfessionalMarketSummary(currentData, technicalAnalysis);
-      
-      final response = await http.post(
-        Uri.parse('https://api.openai.com/v1/chat/completions'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $OPENAI_API_KEY',
-        },
-        body: json.encode({
-          'model': 'gpt-3.5-turbo',
-          'messages': [
-            {
-              'role': 'system',
-              'content': '''You are a professional trading analyst with 15 years of experience. 
-              Provide detailed technical analysis and trading signals based on the market data.
-              Be specific about price action, key levels, and market structure.
-              Give real, actionable insights with clear reasoning.'''
-            },
-            {
-              'role': 'user',
-              'content': marketSummary
-            }
-          ],
-          'temperature': 0.7,
-          'max_tokens': 800,
-          'presence_penalty': 0.3,
-          'frequency_penalty': 0.3,
-        }),
-      ).timeout(const Duration(seconds: 60));
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final aiResponse = data['choices'][0]['message']['content'];
-        
-        final analysis = _parseProfessionalAIResponse(aiResponse, currentData, technicalAnalysis);
-        
-        if (mounted) {
-          setState(() {
-            _analysisResult = analysis;
-            _isAnalyzing = false;
-          });
-          
-          _analysisAnimationController.reset();
-          _analysisAnimationController.forward();
-        }
-      } else {
-        throw Exception('AI service returned status: ${response.statusCode}');
-      }
-      
-    } catch (e) {
-      print('AI Analysis failed: $e');
-      setState(() => _isAnalyzing = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Analysis completed with technical indicators'),
-          backgroundColor: AppColors.primaryPurple,
-        ),
-      );
-      // Fallback to technical analysis
-      _generateTechnicalAnalysis();
-    }
-  }
-
-  Map<String, dynamic> _calculateTechnicalIndicators() {
-    if (_candlestickData.length < 20) return {};
-    
-    final prices = _candlestickData.map((c) => c.close).toList();
-    final highs = _candlestickData.map((c) => c.high).toList();
-    final lows = _candlestickData.map((c) => c.low).toList();
-    final volumes = _candlestickData.map((c) => c.volume).toList();
-    
-    // Calculate trends
-    final recentPrices = prices.sublist(prices.length - 10);
-    final olderPrices = prices.sublist(prices.length - 20, prices.length - 10);
-    final recentAvg = recentPrices.reduce((a, b) => a + b) / recentPrices.length;
-    final olderAvg = olderPrices.reduce((a, b) => a + b) / olderPrices.length;
-    final trend = recentAvg > olderAvg ? 'BULLISH' : 'BEARISH';
-    final trendStrength = ((recentAvg - olderAvg) / olderAvg * 100).abs();
-    
-    // Calculate support/resistance
-    final recentHighs = highs.sublist(highs.length - 20);
-    final recentLows = lows.sublist(lows.length - 20);
-    final resistance = recentHighs.reduce(max);
-    final support = recentLows.reduce(min);
-    
-    // Calculate RSI-like momentum
-    double gains = 0, losses = 0;
-    for (int i = 1; i < prices.length; i++) {
-      final change = prices[i] - prices[i-1];
-      if (change > 0) {
-        gains += change;
-      } else {
-        losses -= change;
-      }
-    }
-    final rs = gains / (losses == 0 ? 1 : losses);
-    final rsi = 100 - (100 / (1 + rs));
-    
-    // Volume analysis
-    final avgVolume = volumes.reduce((a, b) => a + b) / volumes.length;
-    final recentVolume = volumes.sublist(volumes.length - 5).reduce((a, b) => a + b) / 5;
-    final volumeTrend = recentVolume > avgVolume ? 'INCREASING' : 'DECREASING';
-    
-    return {
-      'trend': trend,
-      'trendStrength': trendStrength,
-      'support': support,
-      'resistance': resistance,
-      'rsi': rsi,
-      'volumeTrend': volumeTrend,
-      'currentPrice': prices.last,
-      'priceChange': prices.last - prices[prices.length - 2],
-    };
-  }
-
-  String _prepareProfessionalMarketSummary(RealCurrencyData data, Map<String, dynamic> technicals) {
-    final priceHistory = data.priceHistory.take(15).toList();
-    final lastCandles = _candlestickData.length >= 5 
-        ? _candlestickData.sublist(_candlestickData.length - 5)
-        : _candlestickData;
-        
-    return '''
-PROFESSIONAL TRADING ANALYSIS REQUEST - BE SPECIFIC AND DETAILED:
-
-INSTRUMENT: $selectedPair
-TIMEFRAME: $selectedTimeframe  
-CURRENT PRICE: ${_formatPrice(data.price, selectedPair)}
-24H CHANGE: ${data.changePercent.toStringAsFixed(2)}%
-DIRECTION: ${data.isPositive ? 'BULLISH' : 'BEARISH'}
-
-TECHNICAL OVERVIEW:
-- Primary Trend: ${technicals['trend']} (Strength: ${technicals['trendStrength']?.toStringAsFixed(1)}%)
-- Key Support: ${_formatPrice(technicals['support'], selectedPair)}
-- Key Resistance: ${_formatPrice(technicals['resistance'], selectedPair)}
-- Momentum (RSI): ${technicals['rsi']?.toStringAsFixed(1)}
-- Volume Trend: ${technicals['volumeTrend']}
-
-RECENT PRICE ACTION (Last 5 candles):
-${lastCandles.map((c) => '  O:${_formatPrice(c.open, selectedPair)} H:${_formatPrice(c.high, selectedPair)} L:${_formatPrice(c.low, selectedPair)} C:${_formatPrice(c.close, selectedPair)}').join('\n')}
-
-MARKET CONTEXT:
-- Instrument: ${selectedPair}
-- Timeframe Analysis: ${selectedTimeframe}
-- Recent Volatility: ${_calculateVolatility().toStringAsFixed(3)}%
-- Price Position: ${_calculatePricePosition(technicals['support'], technicals['resistance'], data.price)}%
-
-Provide a detailed professional analysis with:
-1. CLEAR TRADING SIGNAL (BUY/SELL/HOLD) with specific entry levels
-2. Detailed technical reasoning based on price action and indicators
-3. Key support and resistance levels to watch
-4. Risk management suggestions
-5. Market sentiment and potential catalysts
-6. Confidence level (1-100%)
-
-Be very specific and avoid generic statements. Focus on actionable insights.
-''';
-  }
-
-  double _calculateVolatility() {
-    if (_candlestickData.length < 10) return 0.0;
-    final prices = _candlestickData.map((c) => c.close).toList();
-    double sum = 0.0;
-    for (int i = 1; i < prices.length; i++) {
-      sum += ((prices[i] - prices[i-1]) / prices[i-1]).abs();
-    }
-    return (sum / (prices.length - 1)) * 100;
-  }
-
-  double _calculatePricePosition(double support, double resistance, double currentPrice) {
-    if (resistance <= support) return 50.0;
-    return ((currentPrice - support) / (resistance - support)) * 100;
-  }
-
-  void _generateTechnicalAnalysis() {
-    final currentData = _realPrices[selectedPair]!;
-    final technicals = _calculateTechnicalIndicators();
-    
-    // Generate signal based on comprehensive technicals
-    String signal = 'HOLD';
-    double confidence = 50.0;
-    
-    final trend = technicals['trend'] ?? 'NEUTRAL';
-    final rsi = technicals['rsi'] ?? 50.0;
-    final trendStrength = technicals['trendStrength'] ?? 0.0;
-    
-    if (trend == 'BULLISH' && rsi < 70 && trendStrength > 0.5 && currentData.isPositive) {
-      signal = 'BUY';
-      confidence = 65.0 + Random().nextDouble() * 25;
-    } else if (trend == 'BEARISH' && rsi > 30 && trendStrength > 0.5 && !currentData.isPositive) {
-      signal = 'SELL';
-      confidence = 65.0 + Random().nextDouble() * 25;
-    }
-    
-    final reasons = [
-      '${trend} trend identified with ${trendStrength.toStringAsFixed(1)}% strength',
-      'RSI at ${rsi.toStringAsFixed(1)} indicates ${rsi > 70 ? 'overbought' : rsi < 30 ? 'oversold' : 'neutral'} conditions',
-      'Price action shows ${currentData.isPositive ? 'strength' : 'weakness'} in current trend',
-      'Volume trend ${technicals['volumeTrend']} supporting price movement',
-    ];
-    
-    setState(() {
-      _analysisResult = AnalysisResult(
-        pair: selectedPair,
-        timeframe: selectedTimeframe,
-        signal: signal,
-        confidence: confidence.toInt(),
-        entry: _calculateEntryPrice(currentData.price, signal, technicals),
-        takeProfit: _calculateTakeProfit(currentData.price, signal, technicals),
-        stopLoss: _calculateStopLoss(currentData.price, signal, technicals),
-        reasons: reasons,
-        alternativeScenario: 'Monitor key levels for trend confirmation',
-        riskReward: _calculateRiskRewardRatio(signal, technicals),
-      );
-      _isAnalyzing = false;
-    });
-  }
-
-  AnalysisResult _parseProfessionalAIResponse(String aiResponse, RealCurrencyData data, Map<String, dynamic> technicals) {
-    final isBuy = aiResponse.toUpperCase().contains('BUY') || 
-                  aiResponse.toUpperCase().contains('LONG') ||
-                  aiResponse.toUpperCase().contains('BULLISH');
-    
-    final isSell = aiResponse.toUpperCase().contains('SELL') || 
-                   aiResponse.toUpperCase().contains('SHORT') ||
-                   aiResponse.toUpperCase().contains('BEARISH');
-
-    String signal = 'HOLD';
-    if (isBuy) signal = 'BUY';
-    if (isSell) signal = 'SELL';
-
-    final confidence = _extractConfidence(aiResponse);
-    final reasons = _extractDetailedReasons(aiResponse);
-    
-    return AnalysisResult(
-      pair: selectedPair,
-      timeframe: selectedTimeframe,
-      signal: signal,
-      confidence: confidence,
-      entry: _calculateEntryPrice(data.price, signal, technicals),
-      takeProfit: _calculateTakeProfit(data.price, signal, technicals),
-      stopLoss: _calculateStopLoss(data.price, signal, technicals),
-      reasons: reasons,
-      alternativeScenario: _extractAlternativeScenario(aiResponse),
-      riskReward: _calculateRiskRewardRatio(signal, technicals),
-    );
-  }
-
-  List<String> _extractDetailedReasons(String response) {
-    final lines = response.split('\n');
-    final reasons = <String>[];
-    bool inReasonsSection = false;
-    
-    for (final line in lines) {
-      final trimmedLine = line.trim();
-      
-      if (trimmedLine.isEmpty) continue;
-      
-      // Look for sections that typically contain reasons
-      if (trimmedLine.toUpperCase().contains('REASON') ||
-          trimmedLine.toUpperCase().contains('ANALYSIS') ||
-          trimmedLine.toUpperCase().contains('KEY POINT') ||
-          trimmedLine.toUpperCase().contains('TECHNICAL') ||
-          (trimmedLine.startsWith('-') && trimmedLine.length > 20) ||
-          (trimmedLine.startsWith('•') && trimmedLine.length > 20) ||
-          (trimmedLine.startsWith('*') && trimmedLine.length > 20)) {
-        
-        final cleanLine = trimmedLine
-            .replaceAll(RegExp(r'^[-•*\d\.\s]+'), '')
-            .trim();
-            
-        if (cleanLine.length > 25 && cleanLine.length < 200) {
-          if (!cleanLine.toUpperCase().contains('AI') &&
-              !cleanLine.toUpperCase().contains('CHATGPT') &&
-              !cleanLine.toUpperCase().contains('MODEL')) {
-            reasons.add(cleanLine);
-          }
-        }
-      }
-      
-      // Also capture any substantial sentences that look like analysis
-      if (trimmedLine.length > 40 && 
-          trimmedLine.length < 180 &&
-          !trimmedLine.toUpperCase().contains('SIGNAL') &&
-          !trimmedLine.toUpperCase().contains('CONFIDENCE') &&
-          !trimmedLine.toUpperCase().contains('ENTRY') &&
-          !trimmedLine.toUpperCase().contains('STOP') &&
-          !trimmedLine.toUpperCase().contains('TARGET') &&
-          (trimmedLine.contains('.') || trimmedLine.contains(':')) &&
-          reasons.length < 6) {
-        
-        if (!trimmedLine.toUpperCase().contains('AI') &&
-            !trimmedLine.toUpperCase().contains('CHATGPT')) {
-          reasons.add(trimmedLine);
-        }
-      }
-    }
-    
-    // If no good reasons found, create fallback reasons
-    if (reasons.isEmpty) {
-      return [
-        'Price action analysis shows clear market structure',
-        'Technical indicators align with current trend direction',
-        'Key support and resistance levels provide clear framework',
-        'Market sentiment supports the identified trading bias'
-      ];
-    }
-    
-    // Remove duplicates and ensure reasonable length
-    final uniqueReasons = reasons.toSet().toList();
-    return uniqueReasons.take(4).toList();
-  }
-
-  String _extractAlternativeScenario(String response) {
-    final lines = response.split('\n');
-    for (final line in lines) {
-      if (line.toUpperCase().contains('ALTERNATIVE') ||
-          line.toUpperCase().contains('IF WRONG') ||
-          line.toUpperCase().contains('SCENARIO') ||
-          line.toUpperCase().contains('INVALID')) {
-        final cleanLine = line.replaceAll(RegExp(r'^[-•*\d\.\s]+'), '').trim();
-        if (cleanLine.length > 20 && cleanLine.length < 150) {
-          return cleanLine;
-        }
-      }
-    }
-    return 'Monitor key levels and adjust bias if market structure changes';
-  }
-
-  double _calculateEntryPrice(double currentPrice, String signal, Map<String, dynamic> technicals) {
-    if (signal == 'HOLD') return currentPrice;
-    
-    final support = technicals['support'] ?? currentPrice * 0.995;
-    final resistance = technicals['resistance'] ?? currentPrice * 1.005;
-    final volatility = _calculateVolatility() / 100;
-    
-    if (signal == 'BUY') {
-      // Buy on pullback to support or breakout above resistance
-      return min(currentPrice, support * (1 + volatility * 0.1));
-    } else {
-      // Sell on rally to resistance or breakdown below support
-      return max(currentPrice, resistance * (1 - volatility * 0.1));
-    }
-  }
-
-  double _calculateTakeProfit(double currentPrice, String signal, Map<String, dynamic> technicals) {
-    if (signal == 'HOLD') return currentPrice;
-    
-    final support = technicals['support'] ?? currentPrice * 0.995;
-    final resistance = technicals['resistance'] ?? currentPrice * 1.005;
-    final volatility = _calculateVolatility() / 100;
-    
-    if (signal == 'BUY') {
-      // Take profit near next resistance
-      return resistance * (1 - volatility * 0.05);
-    } else {
-      // Take profit near next support
-      return support * (1 + volatility * 0.05);
-    }
-  }
-
-  double _calculateStopLoss(double currentPrice, String signal, Map<String, dynamic> technicals) {
-    if (signal == 'HOLD') return currentPrice;
-    
-    final support = technicals['support'] ?? currentPrice * 0.995;
-    final resistance = technicals['resistance'] ?? currentPrice * 1.005;
-    final volatility = _calculateVolatility() / 100;
-    
-    if (signal == 'BUY') {
-      // Stop loss below key support
-      return support * (1 - volatility * 0.2);
-    } else {
-      // Stop loss above key resistance
-      return resistance * (1 + volatility * 0.2);
-    }
-  }
-
-  double _calculateRiskRewardRatio(String signal, Map<String, dynamic> technicals) {
-    if (signal == 'HOLD') return 1.0;
-    
-    final entry = _calculateEntryPrice(technicals['currentPrice'], signal, technicals);
-    final takeProfit = _calculateTakeProfit(technicals['currentPrice'], signal, technicals);
-    final stopLoss = _calculateStopLoss(technicals['currentPrice'], signal, technicals);
-    
-    final profit = (takeProfit - entry).abs();
-    final risk = (entry - stopLoss).abs();
-    
-    return risk > 0 ? (profit / risk) : 1.0;
-  }
-
-  int _extractConfidence(String response) {
-    final confidenceMatch = RegExp(r'(\d+)%').firstMatch(response);
-    if (confidenceMatch != null) {
-      final confidence = int.parse(confidenceMatch.group(1)!);
-      return confidence.clamp(1, 100);
-    }
-    
-    if (response.toUpperCase().contains('HIGH CONFIDENCE')) return 85;
-    if (response.toUpperCase().contains('MEDIUM CONFIDENCE')) return 70;
-    if (response.toUpperCase().contains('LOW CONFIDENCE')) return 55;
-    if (response.toUpperCase().contains('VERY HIGH')) return 90;
-    
-    return Random().nextInt(30) + 65; // Random between 65-95
-  }
-
-  double _getBasePrice(String pair) {
-    final defaults = {
-      'EUR/USD': 1.0850, 'GBP/USD': 1.2650, 'USD/JPY': 149.50,
-      'USD/CHF': 0.8800, 'AUD/USD': 0.6550, 'USD/CAD': 1.3500,
-      'XAU/USD': 1980.0, 'XAG/USD': 23.50, 'BTC/USD': 43750.0, 'ETH/USD': 2650.0,
-    };
-    return defaults[pair] ?? 1.0;
-  }
-
-  double _getVolatilityForPair(String pair) {
-    if (pair == 'XAU/USD') return 15.0;
-    if (pair == 'XAG/USD') return 0.5;
-    if (pair.contains('BTC')) return 400.0;
-    if (pair.contains('ETH')) return 150.0;
-    if (pair.contains('JPY')) return 0.8;
-    return 0.01;
-  }
-
   @override
   void dispose() {
-    _priceTimer?.cancel();
+    _disconnectFromDeriv();
+    _chartUpdateTimer?.cancel();
     _scanTimer?.cancel();
     _chartAnimationController.dispose();
     _analysisAnimationController.dispose();
@@ -825,15 +898,14 @@ Be very specific and avoid generic statements. Focus on actionable insights.
     super.dispose();
   }
 
-  RealCurrencyData? get currentPairData => _realPrices[selectedPair];
-
   @override
   Widget build(BuildContext context) {
+    final currentData = _realPrices[selectedPair];
+    
     return Scaffold(
       backgroundColor: Colors.black,
       body: CustomScrollView(
         slivers: [
-          // App Bar
           SliverAppBar(
             leading: IconButton(
               icon: Container(
@@ -845,10 +917,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                 ),
                 child: Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
               ),
-              onPressed: () {
-                // Navigate back to dashboard
-                context.go('/dashboard');
-              },
+              onPressed: () => context.go('/dashboard'),
             ),
             title: Column(
               children: [
@@ -862,7 +931,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                   ),
                 ),
                 Text(
-                  'Professional Market Analysis',
+                  'Real-time Market Analysis',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 12,
@@ -886,36 +955,239 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                   ),
                   child: Icon(Icons.refresh, color: Colors.white, size: 20),
                 ),
-                onPressed: () {
-                  _loadInitialPrices();
-                  _generateRealisticCandlestickData();
-                },
+                onPressed: _connectToDeriv,
               ),
             ],
           ),
 
-          // Main Content
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
                   // Selection Card
-                  _buildSelectionCard(),
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Colors.white.withOpacity(0.05),
+                          Colors.white.withOpacity(0.02),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withOpacity(0.1)),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.tune, color: AppColors.primaryPurple, size: 24),
+                            const SizedBox(width: 12),
+                            Text(
+                              'TRADING SETUP',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                                letterSpacing: 1.2,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: _derivChannel?.closeCode == null 
+                                  ? Colors.green.withOpacity(0.2) 
+                                  : Colors.red.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(
+                                  color: _derivChannel?.closeCode == null 
+                                    ? Colors.green 
+                                    : Colors.red,
+                                  width: 1,
+                                ),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: _derivChannel?.closeCode == null 
+                                        ? Colors.green 
+                                        : Colors.red,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    _derivChannel?.closeCode == null ? 'LIVE' : 'SIM',
+                                    style: TextStyle(
+                                      color: _derivChannel?.closeCode == null 
+                                        ? Colors.green 
+                                        : Colors.red,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'INSTRUMENT',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 1.1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          AppColors.primaryPurple.withOpacity(0.3),
+                                          AppColors.primaryPurple.withOpacity(0.1),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: AppColors.primaryPurple.withOpacity(0.5)),
+                                    ),
+                                    child: DropdownButton<String>(
+                                      value: selectedPair,
+                                      isExpanded: true,
+                                      underline: Container(),
+                                      dropdownColor: Colors.grey[900],
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      items: currencyPairs.map((pair) {
+                                        return DropdownMenuItem(
+                                          value: pair,
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 6,
+                                                height: 6,
+                                                decoration: BoxDecoration(
+                                                  color: _getPairColor(pair),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 12),
+                                              Text(
+                                                pair,
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        );
+                                      }).toList(),
+                                      onChanged: _onPairChanged,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'TIMEFRAME',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.white70,
+                                      fontWeight: FontWeight.w600,
+                                      letterSpacing: 1.1,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.blue.withOpacity(0.3),
+                                          Colors.blue.withOpacity(0.1),
+                                        ],
+                                      ),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: Colors.blue.withOpacity(0.5)),
+                                    ),
+                                    child: DropdownButton<String>(
+                                      value: selectedTimeframe,
+                                      isExpanded: true,
+                                      underline: Container(),
+                                      dropdownColor: Colors.grey[900],
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      items: timeframes.map((timeframe) {
+                                        return DropdownMenuItem(
+                                          value: timeframe,
+                                          child: Text(
+                                            timeframe,
+                                            style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        );
+                                      }).toList(),
+                                      onChanged: _onTimeframeChanged,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  
                   const SizedBox(height: 20),
                   
                   // Current Price Card
                   _isLoadingPrices 
                     ? _buildLoadingCard()
-                    : _buildCurrentPriceCard(),
+                    : _buildCurrentPriceCard(currentData),
                   const SizedBox(height: 20),
                   
-                  // Trading Chart
-                  _buildTradingChart(),
+                  // Technical Chart
+                  _buildTechnicalChart(),
                   const SizedBox(height: 20),
                   
-                  // Analyze Button
-                  _buildAnalyzeButton(),
+                  // Chart Tools
+                  _buildChartTools(),
+                  const SizedBox(height: 20),
+                  
+                  // Scan & Analyze Button
+                  _buildScanAnalyzeButton(),
                   const SizedBox(height: 20),
                   
                   // Scanning Animation
@@ -931,189 +1203,6 @@ Be very specific and avoid generic statements. Focus on actionable insights.
         ],
       ),
     );
-  }
-
-  Widget _buildSelectionCard() {
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withOpacity(0.05),
-            Colors.white.withOpacity(0.02),
-          ],
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
-      ),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Icon(Icons.tune, color: AppColors.primaryPurple, size: 24),
-              const SizedBox(width: 12),
-              Text(
-                'TRADING SETUP',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,
-                  letterSpacing: 1.2,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'INSTRUMENT',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            AppColors.primaryPurple.withOpacity(0.3),
-                            AppColors.primaryPurple.withOpacity(0.1),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.primaryPurple.withOpacity(0.5)),
-                      ),
-                      child: DropdownButton<String>(
-                        value: selectedPair,
-                        isExpanded: true,
-                        underline: Container(),
-                        dropdownColor: Colors.grey[900],
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                        items: currencyPairs.map((pair) {
-                          return DropdownMenuItem(
-                            value: pair,
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: _getPairColor(pair),
-                                    shape: BoxShape.circle,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Text(
-                                  pair,
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedPair = value!;
-                            _analysisResult = null;
-                          });
-                          _generateRealisticCandlestickData();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'TIMEFRAME',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.white70,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1.1,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.blue.withOpacity(0.3),
-                            Colors.blue.withOpacity(0.1),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.blue.withOpacity(0.5)),
-                      ),
-                      child: DropdownButton<String>(
-                        value: selectedTimeframe,
-                        isExpanded: true,
-                        underline: Container(),
-                        dropdownColor: Colors.grey[900],
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                        items: timeframes.map((timeframe) {
-                          return DropdownMenuItem(
-                            value: timeframe,
-                            child: Text(
-                              timeframe,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        onChanged: (value) {
-                          setState(() {
-                            selectedTimeframe = value!;
-                            _analysisResult = null;
-                          });
-                          _generateRealisticCandlestickData();
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getPairColor(String pair) {
-    if (pair == 'XAU/USD') return Colors.amber;
-    if (pair == 'XAG/USD') return Colors.grey;
-    if (pair.contains('BTC') || pair.contains('ETH')) return Colors.orange;
-    return AppColors.primaryPurple;
   }
 
   Widget _buildLoadingCard() {
@@ -1141,7 +1230,9 @@ Be very specific and avoid generic statements. Focus on actionable insights.
             ),
             const SizedBox(height: 16),
             Text(
-              'INITIALIZING REAL-TIME DATA',
+              _derivChannel?.closeCode == null 
+                ? 'CONNECTING TO DERIV...' 
+                : 'LOADING MARKET DATA...',
               style: TextStyle(
                 color: Colors.white70,
                 fontWeight: FontWeight.bold,
@@ -1155,9 +1246,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
     );
   }
 
-  Widget _buildCurrentPriceCard() {
-    final pairData = currentPairData;
-    
+  Widget _buildCurrentPriceCard(RealCurrencyData? data) {
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -1192,8 +1281,8 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.green.withOpacity(0.8),
-                      Colors.green.withOpacity(0.4),
+                      (_derivChannel?.closeCode == null ? Colors.green : Colors.amber).withOpacity(0.8),
+                      (_derivChannel?.closeCode == null ? Colors.green : Colors.amber).withOpacity(0.4),
                     ],
                   ),
                   borderRadius: BorderRadius.circular(20),
@@ -1210,9 +1299,9 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                       ),
                     ),
                     const SizedBox(width: 6),
-                    const Text(
-                      'LIVE',
-                      style: TextStyle(
+                    Text(
+                      _derivChannel?.closeCode == null ? 'LIVE' : 'SIM',
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
@@ -1239,8 +1328,8 @@ Be very specific and avoid generic statements. Focus on actionable insights.
             ),
             child: Center(
               child: Text(
-                pairData != null 
-                  ? _formatPrice(pairData.price, selectedPair)
+                data != null 
+                  ? _formatPrice(data.price, selectedPair)
                   : '-.----',
                 style: TextStyle(
                   fontSize: 36,
@@ -1254,31 +1343,31 @@ Be very specific and avoid generic statements. Focus on actionable insights.
           
           const SizedBox(height: 20),
           
-          if (pairData != null)
+          if (data != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
-                color: (pairData.isPositive ? Colors.green : Colors.red).withOpacity(0.1),
+                color: (data.isPositive ? Colors.green : Colors.red).withOpacity(0.1),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(
-                  color: (pairData.isPositive ? Colors.green : Colors.red).withOpacity(0.3),
+                  color: (data.isPositive ? Colors.green : Colors.red).withOpacity(0.3),
                 ),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Icon(
-                    pairData.isPositive ? Icons.trending_up : Icons.trending_down, 
-                    color: pairData.isPositive ? Colors.green : Colors.red, 
-                    size: 18
+                    data.isPositive ? Icons.trending_up : Icons.trending_down, 
+                    color: data.isPositive ? Colors.green : Colors.red, 
+                    size: 20
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 12),
                   Text(
-                    '${pairData.isPositive ? '+' : ''}${_formatChange(pairData.change, selectedPair)} (${pairData.changePercent.toStringAsFixed(2)}%)',
+                    '${data.isPositive ? '+' : ''}${_formatChange(data.change, selectedPair)} (${data.changePercent.toStringAsFixed(2)}%)',
                     style: TextStyle(
-                      color: pairData.isPositive ? Colors.green : Colors.red,
+                      color: data.isPositive ? Colors.green : Colors.red,
                       fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                      fontSize: 16,
                       letterSpacing: 1.1,
                     ),
                   ),
@@ -1290,7 +1379,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
     );
   }
 
-  Widget _buildTradingChart() {
+  Widget _buildTechnicalChart() {
     return FadeTransition(
       opacity: _chartFadeAnimation,
       child: Container(
@@ -1309,7 +1398,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
         ),
         child: Column(
           children: [
-            // Chart header
+            // Chart Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
@@ -1320,7 +1409,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                   Icon(Icons.candlestick_chart, color: AppColors.primaryPurple, size: 20),
                   const SizedBox(width: 12),
                   Text(
-                    'LIVE PRICE CHART',
+                    'TECHNICAL CHART',
                     style: TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -1340,57 +1429,77 @@ Be very specific and avoid generic statements. Focus on actionable insights.
                 ],
               ),
             ),
-            // Chart area
+            
+            // Chart Area
             Expanded(
-              child: _candlestickData.isEmpty 
-                ? Center(
-                    child: CircularProgressIndicator(color: AppColors.primaryPurple),
-                  )
-                : Stack(
-                    children: [
-                      // Chart
-                      GestureDetector(
-                        onScaleUpdate: (details) {
-                          setState(() {
-                            _chartScale = details.scale.clamp(0.5, 3.0);
-                            _chartTranslateX += details.focalPointDelta.dx;
-                            _chartTranslateY += details.focalPointDelta.dy;
-                          });
-                        },
-                        onDoubleTap: () {
-                          setState(() {
-                            _chartScale = 1.0;
-                            _chartTranslateX = 0.0;
-                            _chartTranslateY = 0.0;
-                          });
-                        },
-                        child: Transform(
-                          transform: Matrix4.identity()
-                            ..translate(_chartTranslateX, _chartTranslateY)
-                            ..scale(_chartScale),
-                          child: CustomPaint(
-                            painter: TradingChartPainter(
-                              candlesticks: _candlestickData,
-                              isScanning: _isScanning,
-                              scanProgress: _scanAnimation.value,
-                              scanningParticles: _scanningParticles,
-                            ),
-                            size: Size.infinite,
+              child: GestureDetector(
+                onScaleStart: (details) {
+                  _dragStart = details.focalPoint;
+                },
+                onScaleUpdate: (details) {
+                  setState(() {
+                    _chartTranslateX += details.focalPoint.dx - _dragStart.dx;
+                    _chartTranslateY += details.focalPoint.dy - _dragStart.dy;
+                    _dragStart = details.focalPoint;
+                  });
+                },
+                onScaleEnd: (details) {
+                  _dragStart = Offset.zero;
+                },
+                onDoubleTap: () {
+                  setState(() {
+                    _chartScale = 1.0;
+                    _chartTranslateX = 0.0;
+                    _chartTranslateY = 0.0;
+                  });
+                },
+                child: Stack(
+                  children: [
+                    // Background Grid
+                    CustomPaint(
+                      size: Size.infinite,
+                      painter: ChartGridPainter(),
+                    ),
+                    
+                    // Candlestick Chart
+                    if (_candlestickData.isNotEmpty)
+                      Transform(
+                        transform: Matrix4.identity()
+                          ..translate(_chartTranslateX, _chartTranslateY)
+                          ..scale(_chartScale),
+                        child: CustomPaint(
+                          size: Size.infinite,
+                          painter: ProfessionalCandlestickPainter(
+                            candles: _candlestickData,
+                            showGrid: true,
                           ),
                         ),
                       ),
-                      // Scanning overlay
-                      if (_isScanning) 
-                        Positioned.fill(
-                          child: CustomPaint(
-                            painter: ScanningOverlayPainter(
-                              scanProgress: _scanAnimation.value,
-                              scanningParticles: _scanningParticles,
-                            ),
+                    
+                    // Real-time price line
+                    if (_realtimePriceData.containsKey(selectedPair) && 
+                        _realtimePriceData[selectedPair]!.isNotEmpty)
+                      CustomPaint(
+                        size: Size.infinite,
+                        painter: RealtimeLinePainter(
+                          priceUpdates: _realtimePriceData[selectedPair]!,
+                          color: AppColors.primaryPurple,
+                        ),
+                      ),
+                    
+                    // Scanning overlay
+                    if (_isScanning)
+                      Positioned.fill(
+                        child: CustomPaint(
+                          painter: ScanningOverlayPainter(
+                            scanProgress: _scanAnimation.value,
+                            scanningParticles: _scanningParticles,
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -1398,7 +1507,100 @@ Be very specific and avoid generic statements. Focus on actionable insights.
     );
   }
 
-  Widget _buildAnalyzeButton() {
+  Widget _buildChartTools() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.edit, color: AppColors.primaryPurple, size: 20),
+              const SizedBox(width: 12),
+              Text(
+                'CHART TOOLS',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                  letterSpacing: 1.1,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: Icon(Icons.zoom_in, color: Colors.white70, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _chartScale = min(_chartScale + 0.1, 3.0);
+                  });
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.zoom_out, color: Colors.white70, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _chartScale = max(_chartScale - 0.1, 0.5);
+                  });
+                },
+              ),
+              IconButton(
+                icon: Icon(Icons.center_focus_strong, color: Colors.white70, size: 20),
+                onPressed: () {
+                  setState(() {
+                    _chartScale = 1.0;
+                    _chartTranslateX = 0.0;
+                    _chartTranslateY = 0.0;
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildToolButton(Icons.show_chart, 'Line'),
+              _buildToolButton(Icons.candlestick_chart, 'Candle'),
+              _buildToolButton(Icons.bar_chart, 'Bar'),
+              _buildToolButton(Icons.trending_up, 'Trend'),
+              _buildToolButton(Icons.horizontal_rule, 'Support'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildToolButton(IconData icon, String label) {
+    return Column(
+      children: [
+        Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withOpacity(0.1)),
+          ),
+          child: Icon(icon, color: Colors.white70, size: 24),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white70,
+            fontSize: 10,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScanAnalyzeButton() {
     return Container(
       width: double.infinity,
       height: 60,
@@ -1437,7 +1639,7 @@ Be very specific and avoid generic statements. Focus on actionable insights.
             ),
             const SizedBox(width: 12),
             Text(
-              _isAnalyzing ? 'SCANNING MARKETS...' : 'ANALYZE WITH AI',
+              _isAnalyzing ? 'SCANNING MARKETS...' : 'SCAN & ANALYZE',
               style: const TextStyle(
                 color: Colors.white,
                 fontWeight: FontWeight.bold,
@@ -1848,6 +2050,13 @@ Be very specific and avoid generic statements. Focus on actionable insights.
     );
   }
 
+  Color _getPairColor(String pair) {
+    if (pair == 'XAU/USD') return Colors.amber;
+    if (pair == 'XAG/USD') return Colors.grey;
+    if (pair.contains('BTC') || pair.contains('ETH')) return Colors.orange;
+    return AppColors.primaryPurple;
+  }
+
   String _formatPrice(double price, String pair) {
     if (pair == 'XAU/USD' || pair == 'XAG/USD') return '\$${price.toStringAsFixed(2)}';
     if (pair.contains('BTC') || pair.contains('ETH')) return '\$${price.toStringAsFixed(2)}';
@@ -1863,94 +2072,176 @@ Be very specific and avoid generic statements. Focus on actionable insights.
   }
 }
 
-// Beautiful Chart Painters
-class TradingChartPainter extends CustomPainter {
-  final List<CandlestickData> candlesticks;
-  final bool isScanning;
-  final double scanProgress;
-  final List<ScanningParticle> scanningParticles;
-
-  TradingChartPainter({
-    required this.candlesticks,
-    required this.isScanning,
-    required this.scanProgress,
-    required this.scanningParticles,
-  });
-
+// Professional Chart Painters
+class ChartGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    if (candlesticks.isEmpty) return;
-
-    // Draw dark background
-    final backgroundPaint = Paint()..color = Colors.black;
-    canvas.drawRect(Rect.fromLTRB(0, 0, size.width, size.height), backgroundPaint);
-
-    // Calculate price range
-    final minPrice = candlesticks.map((e) => e.low).reduce(min);
-    final maxPrice = candlesticks.map((e) => e.high).reduce(max);
-    final priceRange = maxPrice - minPrice;
-    final padding = priceRange * 0.1;
-
-    // Draw grid lines
     final gridPaint = Paint()
-      ..color = Colors.white.withOpacity(0.1)
+      ..color = Colors.white.withOpacity(0.05)
       ..strokeWidth = 0.5;
-    
+
+    // Draw vertical grid lines
+    for (int i = 1; i <= 4; i++) {
+      final x = size.width * i / 5;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+
+    // Draw horizontal grid lines
     for (int i = 1; i <= 4; i++) {
       final y = size.height * i / 5;
       canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
     }
+  }
 
-    // Calculate candle dimensions
-    final candleWidth = size.width / candlesticks.length * 0.8;
-    final candleSpacing = size.width / candlesticks.length * 0.2;
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
 
-    // Draw candlesticks
-    for (int i = 0; i < candlesticks.length; i++) {
-      final candle = candlesticks[i];
-      final x = (i * (candleWidth + candleSpacing)) + (candleWidth / 2);
+class ProfessionalCandlestickPainter extends CustomPainter {
+  final List<CandlestickData> candles;
+  final bool showGrid;
+
+  ProfessionalCandlestickPainter({
+    required this.candles,
+    this.showGrid = true,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (candles.isEmpty) return;
+
+    // Calculate price range
+    final minPrice = candles.map((e) => e.low).reduce(min);
+    final maxPrice = candles.map((e) => e.high).reduce(max);
+    final priceRange = maxPrice - minPrice;
+    final padding = priceRange * 0.1;
+
+    // Calculate dimensions
+    final candleWidth = size.width / candles.length * 0.7;
+    final candleSpacing = size.width / candles.length * 0.3;
+    final usableHeight = size.height * 0.9;
+    final topPadding = size.height * 0.05;
+
+    // Draw each candle
+    for (int i = 0; i < candles.length; i++) {
+      final candle = candles[i];
+      final x = (i * (candleWidth + candleSpacing)) + candleWidth / 2;
       
-      final highY = ((maxPrice + padding) - candle.high) / (priceRange + padding * 2) * size.height;
-      final lowY = ((maxPrice + padding) - candle.low) / (priceRange + padding * 2) * size.height;
-      final openY = ((maxPrice + padding) - candle.open) / (priceRange + padding * 2) * size.height;
-      final closeY = ((maxPrice + padding) - candle.close) / (priceRange + padding * 2) * size.height;
+      // Calculate Y positions
+      final highY = topPadding + ((maxPrice + padding) - candle.high) / (priceRange + padding * 2) * usableHeight;
+      final lowY = topPadding + ((maxPrice + padding) - candle.low) / (priceRange + padding * 2) * usableHeight;
+      final openY = topPadding + ((maxPrice + padding) - candle.open) / (priceRange + padding * 2) * usableHeight;
+      final closeY = topPadding + ((maxPrice + padding) - candle.close) / (priceRange + padding * 2) * usableHeight;
 
-      final isGreen = candle.close >= candle.open;
-      final color = isGreen ? Colors.green : Colors.red;
+      final isBullish = candle.close >= candle.open;
+      final color = isBullish ? Colors.green : Colors.red;
 
-      // Draw wick with gradient
+      // Draw wick
       final wickPaint = Paint()
         ..color = color.withOpacity(0.8)
-        ..strokeWidth = 1.0;
+        ..strokeWidth = 1.0
+        ..strokeCap = StrokeCap.round;
+      
       canvas.drawLine(Offset(x, highY), Offset(x, lowY), wickPaint);
 
-      // Draw candle body with gradient
-      final bodyRect = Rect.fromLTRB(
-        x - candleWidth / 2,
-        min(openY, closeY),
-        x + candleWidth / 2,
-        max(openY, closeY),
-      );
+      // Draw candle body
+      final bodyTop = min(openY, closeY);
+      final bodyBottom = max(openY, closeY);
+      final bodyHeight = max(1.0, bodyBottom - bodyTop);
+      
+      if (bodyHeight > 0) {
+        final bodyRect = Rect.fromLTRB(
+          x - candleWidth / 2,
+          bodyTop,
+          x + candleWidth / 2,
+          bodyBottom,
+        );
 
-      final bodyPaint = Paint()
-        ..shader = LinearGradient(
-          colors: [
-            color.withOpacity(0.8),
-            color.withOpacity(0.4),
-          ],
-        ).createShader(bodyRect)
-        ..style = PaintingStyle.fill;
+        final bodyPaint = Paint()
+          ..shader = LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: isBullish
+                ? [Colors.green.withOpacity(0.8), Colors.green.withOpacity(0.4)]
+                : [Colors.red.withOpacity(0.8), Colors.red.withOpacity(0.4)],
+          ).createShader(bodyRect)
+          ..style = PaintingStyle.fill;
 
-      canvas.drawRect(bodyRect, bodyPaint);
+        canvas.drawRect(bodyRect, bodyPaint);
 
-      // Add glow effect for current candle
-      if (i == candlesticks.length - 1) {
-        final glowPaint = Paint()
-          ..color = color.withOpacity(0.2)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0);
-        canvas.drawRect(bodyRect, glowPaint);
+        // Add subtle border
+        final borderPaint = Paint()
+          ..color = color.withOpacity(0.5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 0.5;
+        
+        canvas.drawRect(bodyRect, borderPaint);
       }
     }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class RealtimeLinePainter extends CustomPainter {
+  final List<PriceUpdate> priceUpdates;
+  final Color color;
+
+  RealtimeLinePainter({
+    required this.priceUpdates,
+    required this.color,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (priceUpdates.length < 2) return;
+
+    // Find min and max prices
+    final prices = priceUpdates.map((p) => p.price).toList();
+    final minPrice = prices.reduce(min);
+    final maxPrice = prices.reduce(max);
+    final priceRange = maxPrice - minPrice;
+    
+    if (priceRange == 0) return;
+
+    final usableHeight = size.height * 0.9;
+    final topPadding = size.height * 0.05;
+
+    // Create path for line
+    final path = Path();
+    final paint = Paint()
+      ..color = color.withOpacity(0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+
+    // Calculate first point
+    final firstUpdate = priceUpdates.first;
+    final firstX = 0.0;
+    final firstY = topPadding + ((maxPrice - firstUpdate.price) / priceRange) * usableHeight;
+    path.moveTo(firstX, firstY);
+
+    // Add remaining points
+    for (int i = 1; i < priceUpdates.length; i++) {
+      final update = priceUpdates[i];
+      final x = (i / (priceUpdates.length - 1)) * size.width;
+      final y = topPadding + ((maxPrice - update.price) / priceRange) * usableHeight;
+      path.lineTo(x, y);
+    }
+
+    // Draw line
+    canvas.drawPath(path, paint);
+
+    // Add glow effect
+    final glowPaint = Paint()
+      ..color = color.withOpacity(0.2)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4.0)
+      ..strokeWidth = 4.0
+      ..style = PaintingStyle.stroke;
+    
+    canvas.drawPath(path, glowPaint);
   }
 
   @override
@@ -1968,7 +2259,7 @@ class ScanningOverlayPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Draw scanning beam
+    // Draw scanning beam with gradient
     final beamGradient = LinearGradient(
       colors: [
         Colors.purple.withOpacity(0.3),
@@ -1979,6 +2270,18 @@ class ScanningOverlayPainter extends CustomPainter {
 
     final beamPaint = Paint()..shader = beamGradient;
     canvas.drawRect(Rect.fromLTRB(0, 0, size.width * scanProgress, size.height), beamPaint);
+
+    // Draw scanning line
+    final linePaint = Paint()
+      ..color = Colors.purple
+      ..strokeWidth = 2.0
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
+    
+    canvas.drawLine(
+      Offset(size.width * scanProgress, 0),
+      Offset(size.width * scanProgress, size.height),
+      linePaint,
+    );
 
     // Draw particles
     for (final particle in scanningParticles) {
@@ -1995,18 +2298,6 @@ class ScanningOverlayPainter extends CustomPainter {
         particlePaint,
       );
     }
-
-    // Draw scanning line
-    final linePaint = Paint()
-      ..color = Colors.purple
-      ..strokeWidth = 2.0
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.0);
-    
-    canvas.drawLine(
-      Offset(size.width * scanProgress, 0),
-      Offset(size.width * scanProgress, size.height),
-      linePaint,
-    );
   }
 
   @override
@@ -2128,5 +2419,15 @@ class ScanningParticle {
     required this.size,
     required this.speed,
     required this.opacity,
+  });
+}
+
+class PriceUpdate {
+  final double price;
+  final DateTime timestamp;
+
+  PriceUpdate({
+    required this.price,
+    required this.timestamp,
   });
 }

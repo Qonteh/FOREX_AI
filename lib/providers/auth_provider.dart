@@ -1,281 +1,218 @@
-import 'dart:convert';
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../models/user.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../services/firebase_service.dart';
+import '../services/api_service.dart'; // ADD THIS IMPORT
 
 class AuthProvider extends ChangeNotifier {
-  User? _currentUser;
+  final FirebaseService _firebaseService = FirebaseService.instance;
+  final ApiService _apiService = ApiService.instance; // ADD THIS
+  
   bool _isLoading = false;
-  String? _errorMessage;
-
-  User? get currentUser => _currentUser;
+  String? _error;
+  User? _user;
+  bool _isFirebaseConnected = false;
+  bool _isApiConnected = false; // ADD THIS
+  
   bool get isLoading => _isLoading;
-  String? get errorMessage => _errorMessage;
-  String? get error => _errorMessage; // Add this getter for compatibility
-  bool get isAuthenticated => _currentUser != null;
+  String? get error => _error;
+  User? get user => _user;
+  bool get isAuthenticated => _user != null;
+  String? get userEmail => _user?.email;
+  String? get userId => _user?.uid;
+  bool get isFirebaseConnected => _isFirebaseConnected;
+  bool get isApiConnected => _isApiConnected; // ADD THIS
 
   AuthProvider() {
-    _loadUserFromStorage();
+    _initializeAuth();
   }
 
-  Future<void> _loadUserFromStorage() async {
+  Future<void> _initializeAuth() async {
+    print('🔐 AuthProvider: Initializing Firebase Auth...');
+    
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final userJson = prefs.getString('current_user');
-      if (userJson != null) {
-        final userMap = jsonDecode(userJson) as Map<String, dynamic>;
-        _currentUser = User.fromJson(userMap);
-        notifyListeners();
+      // Test Firebase connection first
+      _isFirebaseConnected = await _firebaseService.testConnection();
+      print('🔥 Firebase Connection Status: ${_isFirebaseConnected ? "CONNECTED" : "DISCONNECTED"}');
+      
+      // Test API connection
+      print('🔌 Testing API connection...');
+      _isApiConnected = await _apiService.testConnection();
+      print('🌐 API Connection Status: ${_isApiConnected ? "CONNECTED" : "DISCONNECTED"}');
+      
+      if (_isFirebaseConnected) {
+        // Listen to auth state changes ONLY if Firebase is connected
+        _firebaseService.auth.authStateChanges().listen((User? user) {
+          print('🔄 Auth State Change: ${user?.email ?? "NO USER"}');
+          _user = user;
+          notifyListeners();
+          
+          if (user != null) {
+            print('✅ User authenticated: ${user.email} (UID: ${user.uid})');
+            // Sync user with your API
+            _syncUserWithApi(user);
+          } else {
+            print('❌ User logged out or not authenticated');
+            // Clear API token on logout
+            _apiService.clearAuthToken();
+          }
+        });
+        
+        // Check current user
+        _user = _firebaseService.auth.currentUser;
+        if (_user != null) {
+          print('👤 Current user found: ${_user!.email}');
+          // Sync with API
+          _syncUserWithApi(_user!);
+        } else {
+          print('👤 No current user found');
+        }
+      } else {
+        print('⚠️ Firebase not connected - Auth will not work!');
+        _error = 'Firebase connection failed. Authentication disabled.';
+      }
+      
+      notifyListeners();
+    } catch (e) {
+      print('❌ AuthProvider initialization error: $e');
+      _error = 'Failed to initialize authentication: $e';
+      _isFirebaseConnected = false;
+      notifyListeners();
+    }
+  }
+
+  // ADD THIS METHOD: Sync Firebase user with your API
+  Future<void> _syncUserWithApi(User firebaseUser) async {
+    try {
+      print('🔄 Syncing Firebase user with API...');
+      
+      // Get Firebase ID token
+      final token = await firebaseUser.getIdToken();
+      print('🔑 Firebase ID Token obtained');
+      
+      // Save token to API service
+      await _apiService.saveAuthToken(token);
+      
+      // Register/Login user in your API
+      final response = await _apiService.post('/auth/sync-firebase-user', data: {
+        'firebase_uid': firebaseUser.uid,
+        'email': firebaseUser.email,
+        'name': firebaseUser.displayName,
+        'photo_url': firebaseUser.photoURL,
+        'firebase_token': token,
+      });
+      
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ User synchronized with API successfully');
+        // Save API token if provided
+        if (response.data['api_token'] != null) {
+          await _apiService.saveAuthToken(response.data['api_token']);
+        }
+      } else {
+        print('⚠️ API sync returned status: ${response.statusCode}');
       }
     } catch (e) {
-      _errorMessage = 'Failed to load user data';
-      notifyListeners();
+      print('❌ Failed to sync user with API: $e');
+      // Don't throw, just log - user can still use app
     }
-  }
-
-  Future<void> _saveUserToStorage(User user) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final userJson = jsonEncode(user.toJson());
-      await prefs.setString('current_user', userJson);
-    } catch (e) {
-      _errorMessage = 'Failed to save user data';
-      notifyListeners();
-    }
-  }
-
-  void _setLoading(bool loading) {
-    _isLoading = loading;
-    notifyListeners();
   }
 
   Future<bool> login(String email, String password) async {
-    _setLoading(true);
-    _errorMessage = null;
-
-    try {
-      // Simulate API call delay
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Mock successful login validation
-      if (email.isEmpty || password.isEmpty) {
-        _errorMessage = 'Please enter both email and password';
-        _setLoading(false);
-        return false;
-      }
-
-      if (!email.contains('@')) {
-        _errorMessage = 'Please enter a valid email address';
-        _setLoading(false);
-        return false;
-      }
-
-      if (password.length < 6) {
-        _errorMessage = 'Password must be at least 6 characters';
-        _setLoading(false);
-        return false;
-      }
-
-      // Create mock user for successful login
-      final mockUser = User(
-        id: '1',
-        email: email,
-        name: email.split('@')[0],
-        phoneNumber: null, // Phone number might not be available during login
-        avatar: null,
-        createdAt: DateTime.now(),
-        isPremium: false,
-      );
-      
-      _currentUser = mockUser;
-      await _saveUserToStorage(mockUser);
-      _setLoading(false);
-      return true;
-      
-    } catch (e) {
-      _errorMessage = 'Login failed: ${e.toString()}';
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  // Updated signup method with phone number support
-  Future<bool> signup(String email, String password, String name, {String? phoneNumber}) async {
-    _setLoading(true);
-    _errorMessage = null;
-
-    try {
-      // Simulate API call delay
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Validate input fields
-      if (email.isEmpty || password.isEmpty || name.isEmpty) {
-        _errorMessage = 'Please fill in all required fields';
-        _setLoading(false);
-        return false;
-      }
-
-      if (!email.contains('@') || !email.contains('.')) {
-        _errorMessage = 'Please enter a valid email address';
-        _setLoading(false);
-        return false;
-      }
-
-      if (password.length < 6) {
-        _errorMessage = 'Password must be at least 6 characters long';
-        _setLoading(false);
-        return false;
-      }
-
-      if (name.trim().length < 2) {
-        _errorMessage = 'Please enter a valid full name';
-        _setLoading(false);
-        return false;
-      }
-
-      // Validate phone number if provided
-      if (phoneNumber != null && phoneNumber.isNotEmpty) {
-        // Remove non-digit characters for validation
-        String digitsOnly = phoneNumber.replaceAll(RegExp(r'[^\d]'), '');
-        if (digitsOnly.length < 10) {
-          _errorMessage = 'Please enter a valid phone number';
-          _setLoading(false);
-          return false;
-        }
-      }
-
-      // Mock successful signup - Create new user
-      final mockUser = User(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        email: email.toLowerCase().trim(),
-        name: name.trim(),
-        phoneNumber: phoneNumber, // Include phone number
-        avatar: null,
-        createdAt: DateTime.now(),
-        isPremium: false,
-      );
-      
-      _currentUser = mockUser;
-      await _saveUserToStorage(mockUser);
-      _setLoading(false);
-      return true;
-      
-    } catch (e) {
-      _errorMessage = 'Signup failed: ${e.toString()}';
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  // Method to update user profile with phone number
-  Future<bool> updateUserProfile({
-    String? name,
-    String? phoneNumber,
-    String? avatar,
-  }) async {
-    if (_currentUser == null) {
-      _errorMessage = 'No user logged in';
-      notifyListeners();
-      return false;
-    }
-
-    _setLoading(true);
-
-    try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Create updated user
-      final updatedUser = User(
-        id: _currentUser!.id,
-        email: _currentUser!.email,
-        name: name ?? _currentUser!.name,
-        phoneNumber: phoneNumber ?? _currentUser!.phoneNumber,
-        avatar: avatar ?? _currentUser!.avatar,
-        createdAt: _currentUser!.createdAt,
-        isPremium: _currentUser!.isPremium,
-      );
-
-      _currentUser = updatedUser;
-      await _saveUserToStorage(updatedUser);
-      _setLoading(false);
-      return true;
-      
-    } catch (e) {
-      _errorMessage = 'Failed to update profile: ${e.toString()}';
-      _setLoading(false);
-      return false;
-    }
-  }
-
-  // Method to verify phone number (for future SMS verification)
-  Future<bool> verifyPhoneNumber(String phoneNumber, String verificationCode) async {
-    _setLoading(true);
+    print('🔐 LOGIN ATTEMPT: $email');
     
+    if (!_isFirebaseConnected) {
+      _error = 'Firebase not connected. Cannot authenticate.';
+      notifyListeners();
+      print('❌ LOGIN FAILED: Firebase not connected');
+      return false;
+    }
+    
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
     try {
-      // Simulate phone verification API call
-      await Future.delayed(const Duration(seconds: 2));
+      print('🔍 Validating credentials with Firebase Auth...');
       
-      // Mock verification (in real app, this would verify with SMS service)
-      if (verificationCode == '123456') {
-        if (_currentUser != null) {
-          final updatedUser = User(
-            id: _currentUser!.id,
-            email: _currentUser!.email,
-            name: _currentUser!.name,
-            phoneNumber: phoneNumber,
-            avatar: _currentUser!.avatar,
-            createdAt: _currentUser!.createdAt,
-            isPremium: _currentUser!.isPremium,
-          );
-          
-          _currentUser = updatedUser;
-          await _saveUserToStorage(updatedUser);
+      // REAL FIREBASE AUTHENTICATION
+      final user = await _firebaseService.signInWithEmailAndPassword(email, password);
+      
+      if (user != null) {
+        _user = user;
+        
+        print('✅ LOGIN SUCCESS: ${user.email}');
+        print('📊 User UID: ${user.uid}');
+        
+        // Sync with your API
+        await _syncUserWithApi(user);
+        
+        // Update last login time in Firestore
+        try {
+          await _firebaseService.updateUserDocument(user.uid, {
+            'lastLoginAt': FieldValue.serverTimestamp(),
+            'email': email,
+            'loginCount': FieldValue.increment(1),
+          });
+          print('✅ User login data updated in Firestore');
+        } catch (firestoreError) {
+          print('⚠️ Failed to update login data: $firestoreError');
         }
-        _setLoading(false);
+        
+        _isLoading = false;
+        notifyListeners();
+        
         return true;
       } else {
-        _errorMessage = 'Invalid verification code';
-        _setLoading(false);
+        _error = 'Login failed. Invalid credentials.';
+        _isLoading = false;
+        notifyListeners();
+        
+        print('❌ LOGIN FAILED: No user returned from Firebase');
         return false;
       }
+    } on FirebaseAuthException catch (e) {
+      // ... keep existing error handling ...
     } catch (e) {
-      _errorMessage = 'Phone verification failed: ${e.toString()}';
-      _setLoading(false);
+      _error = 'An unexpected error occurred during login: $e';
+      _isLoading = false;
+      notifyListeners();
+      
+      print('❌ LOGIN FAILED: Unexpected error: $e');
       return false;
     }
   }
 
-  Future<void> logout() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('current_user');
-      _currentUser = null;
-      _errorMessage = null;
-      notifyListeners();
-    } catch (e) {
-      _errorMessage = 'Logout failed: ${e.toString()}';
-      notifyListeners();
-    }
-  }
-
-  void clearError() {
-    _errorMessage = null;
-    notifyListeners();
-  }
-
-  // Method to check if phone number is verified
-  bool get isPhoneVerified => _currentUser?.phoneNumber != null && _currentUser!.phoneNumber!.isNotEmpty;
-
-  // Method to get formatted phone number
-  String? get formattedPhoneNumber {
-    if (_currentUser?.phoneNumber == null) return null;
+  // Add this method to test API endpoints
+  Future<void> testApiEndpoints() async {
+    print('🧪 TESTING API ENDPOINTS...');
     
-    final phoneNumber = _currentUser!.phoneNumber!;
-    if (phoneNumber.length >= 10) {
-      // Format phone number for display (e.g., +1 (555) 123-4567)
-      return phoneNumber;
+    try {
+      // Test 1: Health endpoint
+      print('1️⃣ Testing /health endpoint...');
+      final healthResponse = await _apiService.get('/health');
+      print('   ✅ /health: ${healthResponse.statusCode} - ${healthResponse.data}');
+      
+      // Test 2: Public endpoint
+      print('2️⃣ Testing /api/public endpoint...');
+      final publicResponse = await _apiService.get('/api/public');
+      print('   ✅ /api/public: ${publicResponse.statusCode}');
+      
+      // Test 3: If user is authenticated, test protected endpoint
+      if (_user != null) {
+        print('3️⃣ Testing protected endpoint with auth...');
+        try {
+          final protectedResponse = await _apiService.get('/api/protected/user');
+          print('   ✅ Protected endpoint: ${protectedResponse.statusCode}');
+        } catch (e) {
+          print('   ❌ Protected endpoint failed: $e');
+        }
+      }
+      
+      print('🎉 API ENDPOINT TESTS COMPLETED');
+      
+    } catch (e) {
+      print('❌ API endpoint tests failed: $e');
     }
-    return phoneNumber;
   }
+
+  // ... rest of your existing methods ...
 }

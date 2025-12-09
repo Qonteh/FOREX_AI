@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/app_logo.dart';
 import '../../theme/app_colors.dart';
+import '../../services/firebase_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -28,6 +29,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -36,7 +38,6 @@ class _LoginScreenState extends State<LoginScreen> {
             children: [
               const SizedBox(height: 40),
               
-              // ADD LOGO TO LOGIN PAGE
               const Center(
                 child: AppLogo(
                   width: 120,
@@ -46,11 +47,10 @@ class _LoginScreenState extends State<LoginScreen> {
               
               const SizedBox(height: 24),
               
-              // PURPLE HEADING
               Text(
                 'Welcome Back',
                 style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  color: AppColors.primaryPurple, // PURPLE HEADING
+                  color: AppColors.primaryPurple,
                   fontWeight: FontWeight.bold,
                 ),
                 textAlign: TextAlign.center,
@@ -66,7 +66,79 @@ class _LoginScreenState extends State<LoginScreen> {
                 textAlign: TextAlign.center,
               ),
               
-              const SizedBox(height: 48),
+              const SizedBox(height: 32),
+              
+              // TEST FIREBASE CONNECTION BUTTON
+              Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                child: ElevatedButton(
+                  onPressed: () async {
+                    try {
+                      final service = FirebaseService.instance;
+                      final connected = await service.testConnection();
+                      
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            connected 
+                              ? '🔥 Firebase Connected Successfully!' 
+                              : '❌ Firebase Connection Failed!',
+                          ),
+                          backgroundColor: connected ? Colors.green : Colors.red,
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('❌ Firebase Error: $e'),
+                          backgroundColor: Colors.red,
+                          duration: const Duration(seconds: 5),
+                        ),
+                      );
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    foregroundColor: Colors.white,
+                  ),
+                  child: const Text('🔥 Test Firebase Connection'),
+                ),
+              ),
+              
+              // Firebase Error Display
+              Consumer<AuthProvider>(
+                builder: (context, authProvider, _) {
+                  if (authProvider.error != null) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              authProvider.error!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               
               Form(
                 key: _formKey,
@@ -76,18 +148,34 @@ class _LoginScreenState extends State<LoginScreen> {
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryPurple),
+                        ),
                       ),
                       validator: (value) {
                         if (value?.isEmpty ?? true) {
                           return 'Please enter your email';
                         }
-                        if (!value!.contains('@')) {
-                          return 'Please enter a valid email';
+                        if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value!)) {
+                          return 'Please enter a valid email address';
                         }
                         return null;
+                      },
+                      onChanged: (_) {
+                        if (context.read<AuthProvider>().error != null) {
+                          context.read<AuthProvider>().clearError();
+                        }
                       },
                     ),
                     
@@ -100,6 +188,17 @@ class _LoginScreenState extends State<LoginScreen> {
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryPurple),
+                        ),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _obscurePassword ? Icons.visibility : Icons.visibility_off,
@@ -120,40 +219,72 @@ class _LoginScreenState extends State<LoginScreen> {
                         }
                         return null;
                       },
+                      onChanged: (_) {
+                        if (context.read<AuthProvider>().error != null) {
+                          context.read<AuthProvider>().clearError();
+                        }
+                      },
                     ),
                     
                     const SizedBox(height: 32),
                     
-                    // LOGIN BUTTON
+                    // FIREBASE LOGIN BUTTON
                     Consumer<AuthProvider>(
                       builder: (context, authProvider, _) {
                         return SizedBox(
                           width: double.infinity,
+                          height: 50,
                           child: ElevatedButton(
                             onPressed: authProvider.isLoading
                                 ? null
                                 : () async {
                                     if (_formKey.currentState!.validate()) {
+                                      print('🔐 ATTEMPTING LOGIN WITH FIREBASE...');
+                                      print('📧 Email: ${_emailController.text.trim()}');
+                                      
                                       final success = await authProvider.login(
-                                        _emailController.text,
+                                        _emailController.text.trim().toLowerCase(),
                                         _passwordController.text,
                                       );
                                       
                                       if (success && mounted) {
-                                        context.go('/dashboard');
-                                      } else if (authProvider.error != null && mounted) {
+                                        print('✅ LOGIN SUCCESSFUL - NAVIGATING TO DASHBOARD');
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(authProvider.error!),
-                                            backgroundColor: Colors.red,
+                                          const SnackBar(
+                                            content: Text('🔥 Login successful! Welcome back!'),
+                                            backgroundColor: Colors.green,
                                           ),
                                         );
+                                        context.go('/dashboard');
+                                      } else if (authProvider.error != null) {
+                                        print('❌ LOGIN FAILED: ${authProvider.error}');
                                       }
                                     }
                                   },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryPurple,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
                             child: authProvider.isLoading
-                                ? const CircularProgressIndicator(color: Colors.white)
-                                : const Text('Sign In'),
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    '🔐 Sign In with Firebase',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                           ),
                         );
                       },
@@ -164,7 +295,6 @@ class _LoginScreenState extends State<LoginScreen> {
               
               const SizedBox(height: 24),
               
-              // SIGN UP LINK
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -174,9 +304,54 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   TextButton(
                     onPressed: () => context.go('/signup'),
-                    child: const Text('Sign Up'),
+                    child: const Text(
+                      'Sign Up',
+                      style: TextStyle(
+                        color: AppColors.primaryPurple,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
+              ),
+              
+              const SizedBox(height: 40),
+              
+              // DEBUG INFO
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryPurple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryPurple.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      color: AppColors.primaryPurple,
+                      size: 24,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '🔥 Firebase Authentication Active',
+                      style: TextStyle(
+                        color: AppColors.primaryPurple,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Test Firebase connection first, then create account to login!',
+                      style: TextStyle(
+                        color: AppColors.primaryPurple.withOpacity(0.8),
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

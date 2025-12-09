@@ -56,9 +56,46 @@ class _SignupScreenState extends State<SignupScreen> {
     return null;
   }
 
+  String? _validateName(String? value) {
+    if (value?.isEmpty ?? true) {
+      return 'Please enter your full name';
+    }
+    if (value!.trim().length < 2) {
+      return 'Name must be at least 2 characters';
+    }
+    if (!RegExp(r'^[a-zA-Z\s]+$').hasMatch(value.trim())) {
+      return 'Name can only contain letters and spaces';
+    }
+    return null;
+  }
+
+  String? _validateEmail(String? value) {
+    if (value?.isEmpty ?? true) {
+      return 'Please enter your email';
+    }
+    if (!RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(value!)) {
+      return 'Please enter a valid email address';
+    }
+    return null;
+  }
+
+  String? _validatePassword(String? value) {
+    if (value?.isEmpty ?? true) {
+      return 'Please enter a password';
+    }
+    if (value!.length < 6) {
+      return 'Password must be at least 6 characters';
+    }
+    if (!RegExp(r'^(?=.*[a-zA-Z])(?=.*\d)').hasMatch(value)) {
+      return 'Password must contain at least one letter and one number';
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: Colors.white,  // FORCE WHITE BACKGROUND
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -99,43 +136,97 @@ class _SignupScreenState extends State<SignupScreen> {
               
               const SizedBox(height: 40),
               
+              // FIREBASE ERROR DISPLAY
+              Consumer<AuthProvider>(
+                builder: (context, authProvider, _) {
+                  if (authProvider.error != null) {
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error_outline, color: Colors.red.shade600, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              authProvider.error!,
+                              style: TextStyle(
+                                color: Colors.red.shade700,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+              
               Form(
                 key: _formKey,
                 child: Column(
                   children: [
-                    // NAME FIELD
+                    // NAME FIELD - ENHANCED VALIDATION
                     TextFormField(
                       controller: _nameController,
-                      decoration: const InputDecoration(
+                      textCapitalization: TextCapitalization.words,
+                      decoration: InputDecoration(
                         labelText: 'Full Name',
-                        prefixIcon: Icon(Icons.person_outlined),
+                        prefixIcon: const Icon(Icons.person_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryPurple),
+                        ),
                       ),
-                      validator: (value) {
-                        if (value?.isEmpty ?? true) {
-                          return 'Please enter your name';
+                      validator: _validateName,
+                      onChanged: (_) {
+                        if (context.read<AuthProvider>().error != null) {
+                          context.read<AuthProvider>().clearError();
                         }
-                        return null;
                       },
                     ),
                     
                     const SizedBox(height: 20),
                     
-                    // EMAIL FIELD
+                    // EMAIL FIELD - ENHANCED VALIDATION
                     TextFormField(
                       controller: _emailController,
                       keyboardType: TextInputType.emailAddress,
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         labelText: 'Email',
-                        prefixIcon: Icon(Icons.email_outlined),
+                        prefixIcon: const Icon(Icons.email_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryPurple),
+                        ),
                       ),
-                      validator: (value) {
-                        if (value?.isEmpty ?? true) {
-                          return 'Please enter your email';
+                      validator: _validateEmail,
+                      onChanged: (_) {
+                        if (context.read<AuthProvider>().error != null) {
+                          context.read<AuthProvider>().clearError();
                         }
-                        if (!value!.contains('@')) {
-                          return 'Please enter a valid email';
-                        }
-                        return null;
                       },
                     ),
                     
@@ -144,8 +235,8 @@ class _SignupScreenState extends State<SignupScreen> {
                     // PHONE NUMBER FIELD WITH COUNTRY CODE
                     Container(
                       decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade400),
-                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         children: [
@@ -184,7 +275,7 @@ class _SignupScreenState extends State<SignupScreen> {
                           Container(
                             height: 40,
                             width: 1,
-                            color: Colors.grey.shade400,
+                            color: Colors.grey.shade300,
                           ),
                           
                           // PHONE NUMBER INPUT
@@ -201,6 +292,11 @@ class _SignupScreenState extends State<SignupScreen> {
                                 ),
                               ),
                               validator: _validatePhoneNumber,
+                              onChanged: (_) {
+                                if (context.read<AuthProvider>().error != null) {
+                                  context.read<AuthProvider>().clearError();
+                                }
+                              },
                             ),
                           ),
                         ],
@@ -209,13 +305,24 @@ class _SignupScreenState extends State<SignupScreen> {
                     
                     const SizedBox(height: 20),
                     
-                    // PASSWORD FIELD
+                    // PASSWORD FIELD - ENHANCED VALIDATION
                     TextFormField(
                       controller: _passwordController,
                       obscureText: _obscurePassword,
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryPurple),
+                        ),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _obscurePassword ? Icons.visibility : Icons.visibility_off,
@@ -227,14 +334,11 @@ class _SignupScreenState extends State<SignupScreen> {
                           },
                         ),
                       ),
-                      validator: (value) {
-                        if (value?.isEmpty ?? true) {
-                          return 'Please enter a password';
+                      validator: _validatePassword,
+                      onChanged: (_) {
+                        if (context.read<AuthProvider>().error != null) {
+                          context.read<AuthProvider>().clearError();
                         }
-                        if (value!.length < 6) {
-                          return 'Password must be at least 6 characters';
-                        }
-                        return null;
                       },
                     ),
                     
@@ -247,6 +351,17 @@ class _SignupScreenState extends State<SignupScreen> {
                       decoration: InputDecoration(
                         labelText: 'Confirm Password',
                         prefixIcon: const Icon(Icons.lock_outlined),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: AppColors.primaryPurple),
+                        ),
                         suffixIcon: IconButton(
                           icon: Icon(
                             _obscureConfirmPassword ? Icons.visibility : Icons.visibility_off,
@@ -267,15 +382,21 @@ class _SignupScreenState extends State<SignupScreen> {
                         }
                         return null;
                       },
+                      onChanged: (_) {
+                        if (context.read<AuthProvider>().error != null) {
+                          context.read<AuthProvider>().clearError();
+                        }
+                      },
                     ),
                     
                     const SizedBox(height: 32),
                     
-                    // SIGNUP BUTTON
+                    // FIREBASE SIGNUP BUTTON - CREATES REAL USER
                     Consumer<AuthProvider>(
                       builder: (context, authProvider, _) {
                         return SizedBox(
                           width: double.infinity,
+                          height: 50,
                           child: ElevatedButton(
                             onPressed: authProvider.isLoading
                                 ? null
@@ -284,28 +405,51 @@ class _SignupScreenState extends State<SignupScreen> {
                                       // Combine country code with phone number
                                       String fullPhoneNumber = _countryDialCode + _phoneController.text;
                                       
+                                      // FIREBASE REAL USER CREATION
                                       final success = await authProvider.signup(
-                                        _emailController.text,
+                                        _emailController.text.trim().toLowerCase(),
                                         _passwordController.text,
-                                        _nameController.text,
+                                        _nameController.text.trim(),
                                         phoneNumber: fullPhoneNumber,
                                       );
                                       
                                       if (success && mounted) {
-                                        context.go('/dashboard');
-                                      } else if (authProvider.error != null && mounted) {
+                                        // SUCCESS - User created in Firebase
                                         ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            content: Text(authProvider.error!),
-                                            backgroundColor: Colors.red,
+                                          const SnackBar(
+                                            content: Text('Account created successfully! Welcome to Quantis!'),
+                                            backgroundColor: Colors.green,
                                           ),
                                         );
+                                        context.go('/dashboard');
                                       }
+                                      // Error handling is done automatically by AuthProvider
                                     }
                                   },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.primaryPurple,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 2,
+                            ),
                             child: authProvider.isLoading
-                                ? const CircularProgressIndicator(color: Colors.white)
-                                : const Text('Create Account'),
+                                ? const SizedBox(
+                                    height: 20,
+                                    width: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Create Account',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
                           ),
                         );
                       },
@@ -326,9 +470,54 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                   TextButton(
                     onPressed: () => context.go('/login'),
-                    child: const Text('Sign In'),
+                    child: const Text(
+                      'Sign In',
+                      style: TextStyle(
+                        color: AppColors.primaryPurple,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   ),
                 ],
+              ),
+              
+              const SizedBox(height: 20),
+              
+              // FIREBASE INFO
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primaryPurple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primaryPurple.withOpacity(0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.security,
+                      color: AppColors.primaryPurple,
+                      size: 24,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Secure Firebase Registration',
+                      style: TextStyle(
+                        color: AppColors.primaryPurple,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Your account will be securely stored in Firebase Authentication',
+                      style: TextStyle(
+                        color: AppColors.primaryPurple.withOpacity(0.8),
+                        fontSize: 12,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

@@ -1,7 +1,7 @@
 """
 SQLAlchemy database models for User, Affiliate, Wallet, and Transaction.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
 from sqlalchemy.orm import relationship
 
@@ -17,8 +17,8 @@ class User(Base):
     username = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     referral_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     wallet = relationship("Wallet", back_populates="user", uselist=False, cascade="all, delete-orphan")
@@ -34,7 +34,7 @@ class Affiliate(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     code = Column(String(50), unique=True, index=True, nullable=False)
     total_referrals = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user = relationship("User", back_populates="affiliate")
@@ -47,8 +47,8 @@ class Wallet(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
     balance = Column(Float, default=0.0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     # Relationships
     user = relationship("User", back_populates="wallet")
@@ -64,7 +64,7 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     transaction_type = Column(String(20), nullable=False)  # 'deposit' or 'withdraw'
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     wallet = relationship("Wallet", back_populates="transactions")

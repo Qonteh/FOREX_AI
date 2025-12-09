@@ -56,10 +56,13 @@ def create_user(db: Session, user: schemas.UserCreate, referral_affiliate_id: Op
         if affiliate:
             affiliate_wallet = get_wallet_by_user_id(db, affiliate.user_id)
             if affiliate_wallet:
+                # Create tracking transaction for referral signup
+                # Note: Commission amount is set to 0.0 as a placeholder
+                # Implement actual commission calculation logic based on business requirements
                 create_transaction(
                     db=db,
                     wallet_id=affiliate_wallet.id,
-                    amount=0.0,  # Initial tracking transaction, commission logic can be expanded
+                    amount=0.0,
                     transaction_type=models.TransactionType.COMMISSION,
                     description=f"Referral signup: {user.email}"
                 )

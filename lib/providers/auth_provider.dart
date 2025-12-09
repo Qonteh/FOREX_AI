@@ -214,5 +214,120 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  // ... rest of your existing methods ...
+  Future<bool> signup(
+    String email, 
+    String password, 
+    String name, 
+    {String? phoneNumber}
+  ) async {
+    print('👤 SIGNUP ATTEMPT: $email');
+    
+    if (!_isFirebaseConnected) {
+      _error = 'Firebase not connected. Cannot create account.';
+      notifyListeners();
+      print('❌ SIGNUP FAILED: Firebase not connected');
+      return false;
+    }
+    
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      print('🔍 Creating Firebase user account...');
+      
+      // REAL FIREBASE USER CREATION
+      final user = await _firebaseService.createUserWithEmailAndPassword(email, password);
+      
+      if (user != null) {
+        _user = user;
+        
+        print('✅ SIGNUP SUCCESS: ${user.email}');
+        print('📊 User UID: ${user.uid}');
+        
+        // Update display name in Firebase Auth
+        try {
+          await user.updateDisplayName(name);
+          await user.reload();
+          print('✅ Display name updated in Firebase Auth');
+        } catch (e) {
+          print('⚠️ Failed to update display name: $e');
+        }
+        
+        // Create user document in Firestore with phone number
+        try {
+          await _firebaseService.createUserDocument(user.uid, {
+            'email': email.toLowerCase(),
+            'name': name,
+            'phoneNumber': phoneNumber,
+            'isPremium': false,
+            'isActive': true,
+          });
+          print('✅ User document created in Firestore with phone: $phoneNumber');
+        } catch (firestoreError) {
+          print('⚠️ Failed to create user document: $firestoreError');
+        }
+        
+        // Sync with API if available
+        await _syncUserWithApi(user);
+        
+        _isLoading = false;
+        notifyListeners();
+        
+        return true;
+      } else {
+        _error = 'Signup failed. Could not create account.';
+        _isLoading = false;
+        notifyListeners();
+        
+        print('❌ SIGNUP FAILED: No user returned from Firebase');
+        return false;
+      }
+    } on FirebaseAuthException catch (e) {
+      print('❌ SIGNUP FAILED: Firebase Auth Error - ${e.code}');
+      _error = _firebaseService.getFirebaseAuthErrorMessage(e.code);
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } catch (e) {
+      _error = 'An unexpected error occurred during signup: $e';
+      _isLoading = false;
+      notifyListeners();
+      
+      print('❌ SIGNUP FAILED: Unexpected error: $e');
+      return false;
+    }
+  }
+
+  Future<void> logout() async {
+    print('🚪 LOGOUT ATTEMPT');
+    
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      await _firebaseService.signOut();
+      _user = null;
+      
+      // Clear API token
+      _apiService.clearAuthToken();
+      
+      print('✅ LOGOUT SUCCESS');
+      
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _error = 'Failed to logout: $e';
+      _isLoading = false;
+      notifyListeners();
+      
+      print('❌ LOGOUT FAILED: $e');
+    }
+  }
+
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
 }

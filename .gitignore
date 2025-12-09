@@ -43,3 +43,14 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Python Backend
+backend/fastapi/.env
+backend/fastapi/__pycache__/
+backend/fastapi/**/__pycache__/
+backend/fastapi/.pytest_cache/
+backend/fastapi/venv/
+backend/fastapi/env/
+backend/fastapi/*.egg-info/
+backend/fastapi/dist/
+backend/fastapi/build/

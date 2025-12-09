@@ -21,10 +21,48 @@ FastAPI backend for FOREX AI Trading Application with user authentication and ph
 
 ### 1. Install Dependencies
 
+#### Linux/macOS
+
 ```bash
 cd backend/fastapi
 pip install -r requirements.txt
 ```
+
+#### Windows
+
+On Windows, you may need to upgrade pip first to ensure pre-built wheels are used:
+
+```bash
+cd backend\fastapi
+python -m pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+**Troubleshooting on Windows:**
+
+If you encounter a `pg_config executable not found` error with `psycopg2-binary`:
+
+1. **Upgrade pip**: Make sure you have the latest pip version:
+   ```bash
+   python -m pip install --upgrade pip
+   ```
+
+2. **Install wheel package**: Ensure wheel is installed:
+   ```bash
+   pip install wheel
+   ```
+
+3. **Use Python 3.9-3.12**: psycopg2-binary 2.9.11 has pre-built wheels for Python 3.9-3.12. Check your version:
+   ```bash
+   python --version
+   ```
+
+4. **Alternative**: If issues persist, you can use `psycopg` (version 3) instead:
+   ```bash
+   # Edit requirements.txt and replace psycopg2-binary with:
+   psycopg[binary]==3.1.19
+   ```
+   Then update `backend/fastapi/app/database.py` to use `postgresql+psycopg` instead of `postgresql` in DATABASE_URL.
 
 ### 2. Database Setup
 

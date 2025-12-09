@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Text, Enum
 )
@@ -24,7 +24,7 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     referral_id = Column(Integer, ForeignKey("affiliates.id"), nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     affiliate = relationship("Affiliate", back_populates="user", uselist=False, foreign_keys="Affiliate.user_id")
@@ -40,7 +40,7 @@ class Affiliate(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), unique=True, nullable=False)
     code = Column(String(50), unique=True, index=True, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="affiliate", foreign_keys=[user_id])
@@ -68,7 +68,7 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     type = Column(Enum(TransactionType), nullable=False)
     description = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     wallet = relationship("Wallet", back_populates="transactions")
@@ -87,7 +87,7 @@ class RefreshToken(Base):
     token = Column(Text, nullable=False)  # Store the actual token for validation
     revoked = Column(Boolean, default=False, nullable=False)  # For rotation/revocation
     expires_at = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     
     # Relationships
     user = relationship("User", back_populates="refresh_tokens")
@@ -103,7 +103,7 @@ class RevokedAccessToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     jti = Column(String(255), unique=True, index=True, nullable=False)  # JWT ID (UUID)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    revoked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    revoked_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     expires_at = Column(DateTime, nullable=False)  # When token naturally expires
     
     # Relationships

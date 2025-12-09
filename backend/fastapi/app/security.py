@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Tuple, Optional
 import uuid
 
@@ -37,13 +37,13 @@ def create_access_token(subject: str) -> Tuple[str, str, datetime]:
     
     # Calculate expiration
     expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    expires_at = datetime.utcnow() + expires_delta
+    expires_at = datetime.now(timezone.utc) + expires_delta
     
     # Create token payload
     to_encode = {
         "sub": str(subject),
         "jti": jti,
-        "exp": expires_at,
+        "exp": int(expires_at.timestamp()),  # JWT exp must be Unix timestamp (int)
         "type": "access"
     }
     
@@ -72,13 +72,13 @@ def create_refresh_token(subject: str) -> Tuple[str, str, datetime]:
     
     # Calculate expiration
     expires_delta = timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    expires_at = datetime.utcnow() + expires_delta
+    expires_at = datetime.now(timezone.utc) + expires_delta
     
     # Create token payload
     to_encode = {
         "sub": str(subject),
         "jti": jti,
-        "exp": expires_at,
+        "exp": int(expires_at.timestamp()),  # JWT exp must be Unix timestamp (int)
         "type": "refresh"
     }
     

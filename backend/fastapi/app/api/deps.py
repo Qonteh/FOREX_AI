@@ -10,6 +10,8 @@ from app.models import User
 
 # HTTP Bearer token scheme for authentication
 security = HTTPBearer()
+# HTTP Bearer for optional authentication (doesn't raise error if no token)
+security_optional = HTTPBearer(auto_error=False)
 
 
 def get_current_user(
@@ -85,7 +87,7 @@ def get_current_user(
 
 
 def get_current_user_optional(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
     db: Session = Depends(get_db)
 ) -> Optional[User]:
     """

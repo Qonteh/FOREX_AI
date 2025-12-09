@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
 
@@ -209,7 +209,7 @@ def validate_refresh_token(db: Session, jti: str, token: str) -> Tuple[bool, Opt
         return False, "reuse"
     
     # Check expiration
-    if db_token.expires_at < datetime.utcnow():
+    if db_token.expires_at < datetime.now(timezone.utc):
         return False, "expired"
     
     return True, None
@@ -272,7 +272,7 @@ def revoke_all_user_access_tokens(db: Session, user_id: int, current_jti: Option
         # Calculate expiration based on settings
         from datetime import timedelta
         from app.core.config import settings
-        expires_at = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         revoke_access_token(db, user_id, current_jti, expires_at)
         return 1
     return 0
@@ -288,7 +288,7 @@ def cleanup_expired_tokens(db: Session) -> Tuple[int, int]:
     Returns:
         Tuple of (refresh_tokens_deleted, access_tokens_deleted)
     """
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     
     # Delete expired refresh tokens
     refresh_deleted = db.query(RefreshToken).filter(

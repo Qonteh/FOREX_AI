@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
 from ..database import get_db
 from ..models.user import User
 from ..schemas.user import UserRegisterRequest, UserRegisterResponse, UserResponse
@@ -24,14 +23,8 @@ async def register(
     
     Returns: JWT token and user data
     """
-    # Get phone number from either 'phone' or 'tel' field
+    # Get phone number from either 'phone' or 'tel' field (validated by Pydantic model)
     phone_number = user_data.phone or user_data.tel
-    
-    if not phone_number:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number is required. Provide either 'phone' or 'tel' field."
-        )
     
     # Check if email already exists
     existing_email = db.query(User).filter(User.email == user_data.email).first()
@@ -53,29 +46,16 @@ async def register(
     hashed_password = get_password_hash(user_data.password)
     
     # Create new user
-    try:
-        new_user = User(
-            email=user_data.email,
-            name=user_data.name,
-            phone=phone_number,
-            hashed_password=hashed_password
-        )
-        
-        db.add(new_user)
-        db.commit()
-        db.refresh(new_user)
-    except IntegrityError as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User registration failed due to duplicate email or phone"
-        )
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred during registration: {str(e)}"
-        )
+    new_user = User(
+        email=user_data.email,
+        name=user_data.name,
+        phone=phone_number,
+        hashed_password=hashed_password
+    )
+    
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
     
     # Create access token
     access_token = create_access_token(

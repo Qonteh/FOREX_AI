@@ -33,10 +33,10 @@ async def startup_event():
     """Initialize database on startup."""
     print("🚀 Starting FOREX AI API...")
     
-    # Get database URL
-    db_url = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost:3306/forex_ai')
+    # Get database URL (default: MySQL without password for local dev)
+    db_url = os.getenv('DATABASE_URL', 'mysql+pymysql://root@localhost:3306/forex_ai')
     
-    # Mask password in log for security
+    # Mask password in log for security (if password exists)
     if '@' in db_url and '://' in db_url:
         parts = db_url.split('://', 1)
         if '@' in parts[1]:
@@ -53,11 +53,12 @@ async def startup_event():
     
     print(f"📊 Database URL: {masked_url}")
     
-    # Check if using default password
+    # Check if using default credentials
     if 'DATABASE_URL' not in os.environ:
         print("⚠️  WARNING: Using default DATABASE_URL")
-        print("⚠️  Please create a .env file with your MySQL credentials!")
-        print("⚠️  Copy .env.example to .env and update with your MySQL password")
+        print("⚠️  Default: MySQL without password (root@localhost:3306)")
+        print("⚠️  If you need a password, create .env file with:")
+        print("⚠️  DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/forex_ai")
     
     # Initialize database tables
     try:
@@ -68,6 +69,10 @@ async def startup_event():
         print("\n📝 Troubleshooting:")
         print("   1. Make sure MySQL is running")
         print("   2. Create the database: CREATE DATABASE forex_ai;")
+        print("   3. Check your DATABASE_URL in .env file")
+        print("   4. Verify MySQL credentials (username/password)")
+        print("   5. If no password: DATABASE_URL=mysql+pymysql://root@localhost:3306/forex_ai")
+        print("   6. If with password: DATABASE_URL=mysql+pymysql://root:PASSWORD@localhost:3306/forex_ai")
         print("   3. Check your DATABASE_URL in .env file")
         print("   4. Verify MySQL credentials (username/password)")
         print("   5. Example: DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/forex_ai")

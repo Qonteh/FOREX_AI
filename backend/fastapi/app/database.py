@@ -9,9 +9,10 @@ import os
 
 # Database URL from environment variable with fallback
 # Supports both MySQL and PostgreSQL
+# Default: MySQL without password (common for local development)
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "mysql+pymysql://root:password@localhost:3306/forex_ai"
+    "mysql+pymysql://root@localhost:3306/forex_ai"
 )
 
 # Create SQLAlchemy engine

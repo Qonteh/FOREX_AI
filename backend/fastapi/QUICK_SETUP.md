@@ -7,21 +7,36 @@ Copy the example file:
 cp .env.example .env
 ```
 
-## Step 2: Update .env with YOUR MySQL password
+## Step 2: Update .env with YOUR MySQL configuration
 
-Edit `.env` and change the password:
+Edit `.env` and set your MySQL connection:
+
+### If you have a MySQL password:
 ```env
 DATABASE_URL=mysql+pymysql://root:YOUR_MYSQL_PASSWORD@localhost:3306/forex_ai
 SECRET_KEY=your-super-secret-jwt-key-change-this
 ```
 
-**Important:** Replace `YOUR_MYSQL_PASSWORD` with your actual MySQL root password!
+### If you DON'T have a MySQL password (no password):
+```env
+DATABASE_URL=mysql+pymysql://root@localhost:3306/forex_ai
+SECRET_KEY=your-super-secret-jwt-key-change-this
+```
+
+**Note:** Just remove the `:password` part from the URL if you don't use a password!
 
 ## Step 3: Create the database
 
 Open MySQL and create the database:
+
+### If you have a password:
 ```bash
 mysql -u root -p
+```
+
+### If you DON'T have a password:
+```bash
+mysql -u root
 ```
 
 Then run:
@@ -32,8 +47,14 @@ exit;
 
 ## Step 4: Initialize the database schema
 
+### If you have a password:
 ```bash
 mysql -u root -p forex_ai < db/init.sql
+```
+
+### If you DON'T have a password:
+```bash
+mysql -u root forex_ai < db/init.sql
 ```
 
 ## Step 5: Run the server
@@ -46,7 +67,8 @@ uvicorn main:app --reload
 
 ### "Access denied for user 'root'@'localhost'"
 - Your MySQL password in .env is wrong
-- Update DATABASE_URL in .env with correct password
+- If you don't have a password, use: `DATABASE_URL=mysql+pymysql://root@localhost:3306/forex_ai`
+- If you have a password, use: `DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/forex_ai`
 
 ### "Unknown database 'forex_ai'"
 - Run: `CREATE DATABASE forex_ai;` in MySQL

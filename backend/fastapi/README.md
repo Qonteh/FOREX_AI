@@ -126,9 +126,15 @@ psql -U postgres -d forex_ai -f db/migrations/001_add_phone_to_users.sql
 
 Create a `.env` file in the `backend/fastapi` directory:
 
-**For MySQL (default):**
+**For MySQL with password:**
 ```env
-DATABASE_URL=mysql+pymysql://root:password@localhost:3306/forex_ai
+DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/forex_ai
+SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
+```
+
+**For MySQL without password:**
+```env
+DATABASE_URL=mysql+pymysql://root@localhost:3306/forex_ai
 SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
 ```
 
@@ -137,6 +143,8 @@ SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/forex_ai
 SECRET_KEY=your-super-secret-jwt-key-change-this-in-production
 ```
+
+**Note**: If your MySQL doesn't have a password, simply omit the `:password` part from the URL.
 
 **Security Note**: Always use a strong, randomly generated `SECRET_KEY` in production!
 

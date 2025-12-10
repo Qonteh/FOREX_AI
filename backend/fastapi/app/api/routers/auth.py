@@ -50,26 +50,51 @@ async def register(
     Returns:
         JWT token and user data
     """
+    # Log the registration attempt
+    print(f"📝 Registration attempt: email={user_data.email}, phone={user_data.phone}")
+    
     # Check if user with email already exists
-    existing_user = crud.get_user_by_email(db, user_data.email.lower())
-    if existing_user:
+    try:
+        existing_user = crud.get_user_by_email(db, user_data.email.lower())
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered. Please use a different email or login."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error checking email: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Email already registered. Please use a different email or login."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}. Make sure the 'users' table exists. Run: mysql -u root forex_ai < db/init.sql"
         )
     
     # Check if user with phone already exists
-    existing_phone = crud.get_user_by_phone(db, user_data.phone)
-    if existing_phone:
+    try:
+        existing_phone = crud.get_user_by_phone(db, user_data.phone)
+        if existing_phone:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Phone number already registered. Please use a different phone number or login."
+            )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error checking phone: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Phone number already registered. Please use a different phone number or login."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database error: {str(e)}. Make sure the 'users' table exists. Run: mysql -u root forex_ai < db/init.sql"
         )
     
     # Create new user
     try:
         user = crud.create_user(db, user_data)
     except Exception as e:
+        # Log the full error for debugging
+        import traceback
+        print(f"❌ Error creating user: {str(e)}")
+        print(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create user: {str(e)}"

@@ -32,7 +32,32 @@ app.include_router(auth.router)
 async def startup_event():
     """Initialize database on startup."""
     print("🚀 Starting FOREX AI API...")
-    print(f"📊 Database URL: {os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/forex_ai')}")
+    
+    # Get database URL
+    db_url = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost:3306/forex_ai')
+    
+    # Mask password in log for security
+    if '@' in db_url and '://' in db_url:
+        parts = db_url.split('://', 1)
+        if '@' in parts[1]:
+            user_pass, host_db = parts[1].split('@', 1)
+            if ':' in user_pass:
+                user, _ = user_pass.split(':', 1)
+                masked_url = f"{parts[0]}://{user}:****@{host_db}"
+            else:
+                masked_url = db_url
+        else:
+            masked_url = db_url
+    else:
+        masked_url = db_url
+    
+    print(f"📊 Database URL: {masked_url}")
+    
+    # Check if using default password
+    if 'DATABASE_URL' not in os.environ:
+        print("⚠️  WARNING: Using default DATABASE_URL")
+        print("⚠️  Please create a .env file with your MySQL credentials!")
+        print("⚠️  Copy .env.example to .env and update with your MySQL password")
     
     # Initialize database tables
     try:
@@ -40,6 +65,12 @@ async def startup_event():
         print("✅ Database initialized successfully")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
+        print("\n📝 Troubleshooting:")
+        print("   1. Make sure MySQL is running")
+        print("   2. Create the database: CREATE DATABASE forex_ai;")
+        print("   3. Check your DATABASE_URL in .env file")
+        print("   4. Verify MySQL credentials (username/password)")
+        print("   5. Example: DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/forex_ai")
 
 
 @app.get("/")

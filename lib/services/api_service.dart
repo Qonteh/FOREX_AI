@@ -2,7 +2,8 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  static const String baseUrl = 'https://api.eutrading.com';
+  // FastAPI backend URL - change this to match your backend
+  static const String baseUrl = 'http://localhost:8000';
   late Dio _dio;
   static ApiService? _instance;
 
@@ -201,5 +202,86 @@ class ApiService {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     print('🗑️ Auth token cleared from shared preferences');
+  }
+
+  // Authentication methods for FastAPI backend
+  Future<Map<String, dynamic>> register({
+    required String email,
+    required String password,
+    required String name,
+    String? phone,
+  }) async {
+    try {
+      print('📝 Registering user: $email');
+      final response = await post('/auth/register', data: {
+        'email': email,
+        'password': password,
+        'name': name,
+        if (phone != null) 'phone': phone,
+      });
+      
+      print('✅ Registration successful');
+      final data = response.data as Map<String, dynamic>;
+      
+      // Save token
+      if (data['access_token'] != null) {
+        await saveAuthToken(data['access_token']);
+      }
+      
+      return data;
+    } catch (e) {
+      print('❌ Registration failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> login({
+    required String email,
+    required String password,
+  }) async {
+    try {
+      print('🔐 Logging in user: $email');
+      final response = await post('/auth/login', data: {
+        'email': email,
+        'password': password,
+      });
+      
+      print('✅ Login successful');
+      final data = response.data as Map<String, dynamic>;
+      
+      // Save token
+      if (data['access_token'] != null) {
+        await saveAuthToken(data['access_token']);
+      }
+      
+      return data;
+    } catch (e) {
+      print('❌ Login failed: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getCurrentUser() async {
+    try {
+      print('👤 Getting current user info');
+      final response = await get('/auth/me');
+      
+      print('✅ User info retrieved');
+      return response.data as Map<String, dynamic>;
+    } catch (e) {
+      print('❌ Failed to get user info: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> logout() async {
+    try {
+      print('🚪 Logging out');
+      await clearAuthToken();
+      print('✅ Logout successful');
+    } catch (e) {
+      print('❌ Logout failed: $e');
+      rethrow;
+    }
   }
 }

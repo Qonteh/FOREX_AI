@@ -51,59 +51,140 @@ async def register(
         JWT token and user data
     """
     # Log the registration attempt
-    print(f"📝 Registration attempt: email={user_data.email}, phone={user_data.phone}")
+    print(f"\n{'='*60}")
+    print(f"📝 Registration attempt:")
+    print(f"   Email: {user_data.email}")
+    print(f"   Phone: {user_data.phone}")
+    print(f"   Name: {user_data.name}")
+    print(f"{'='*60}\n")
     
     # Check if user with email already exists
     try:
+        print(f"🔍 Checking if email exists...")
         existing_user = crud.get_user_by_email(db, user_data.email.lower())
         if existing_user:
+            print(f"❌ Email already registered: {user_data.email}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered. Please use a different email or login."
             )
+        print(f"✅ Email is available")
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error checking email: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Database error checking email:")
+        print(error_details)
+        
+        # Provide helpful error message based on the error type
+        error_msg = str(e)
+        if "Table" in error_msg and "doesn't exist" in error_msg:
+            detail = (
+                "Database table 'users' does not exist. "
+                "Please run the database setup script: "
+                "python setup_database.py"
+            )
+        elif "Can't connect" in error_msg or "Access denied" in error_msg:
+            detail = (
+                "Cannot connect to MySQL database. "
+                "Please check MySQL is running and credentials are correct."
+            )
+        else:
+            detail = f"Database error: {error_msg}"
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}. Make sure the 'users' table exists. Run: mysql -u root forex_ai < db/init.sql"
+            detail=detail
         )
     
     # Check if user with phone already exists
     try:
+        print(f"🔍 Checking if phone exists...")
         existing_phone = crud.get_user_by_phone(db, user_data.phone)
         if existing_phone:
+            print(f"❌ Phone already registered: {user_data.phone}")
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Phone number already registered. Please use a different phone number or login."
             )
+        print(f"✅ Phone is available")
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ Error checking phone: {str(e)}")
+        import traceback
+        error_details = traceback.format_exc()
+        print(f"❌ Database error checking phone:")
+        print(error_details)
+        
+        # Provide helpful error message based on the error type
+        error_msg = str(e)
+        if "Table" in error_msg and "doesn't exist" in error_msg:
+            detail = (
+                "Database table 'users' does not exist. "
+                "Please run the database setup script: "
+                "python setup_database.py"
+            )
+        elif "Can't connect" in error_msg or "Access denied" in error_msg:
+            detail = (
+                "Cannot connect to MySQL database. "
+                "Please check MySQL is running and credentials are correct."
+            )
+        else:
+            detail = f"Database error: {error_msg}"
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Database error: {str(e)}. Make sure the 'users' table exists. Run: mysql -u root forex_ai < db/init.sql"
+            detail=detail
         )
     
     # Create new user
     try:
+        print(f"📝 Creating new user...")
         user = crud.create_user(db, user_data)
+        print(f"✅ User created successfully: ID={user.id}")
     except Exception as e:
         # Log the full error for debugging
         import traceback
-        print(f"❌ Error creating user: {str(e)}")
-        print(f"❌ Traceback: {traceback.format_exc()}")
+        error_details = traceback.format_exc()
+        print(f"❌ Error creating user:")
+        print(error_details)
+        
+        # Provide helpful error message
+        error_msg = str(e)
+        if "Duplicate entry" in error_msg:
+            if "email" in error_msg:
+                detail = "Email already exists in database"
+            elif "phone" in error_msg:
+                detail = "Phone number already exists in database"
+            else:
+                detail = "Duplicate entry in database"
+        else:
+            detail = f"Failed to create user: {error_msg}"
+        
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create user: {str(e)}"
+            detail=detail
         )
     
     # Create access token
-    access_token = create_access_token(
-        data={"sub": user.id, "email": user.email}
-    )
+    try:
+        print(f"🔐 Creating access token...")
+        access_token = create_access_token(
+            data={"sub": user.id, "email": user.email}
+        )
+        print(f"✅ Access token created")
+        print(f"\n{'='*60}")
+        print(f"✅ Registration successful!")
+        print(f"   User ID: {user.id}")
+        print(f"   Email: {user.email}")
+        print(f"{'='*60}\n")
+    except Exception as e:
+        print(f"❌ Error creating token: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create authentication token: {str(e)}"
+        )
     
     return Token(
         access_token=access_token,

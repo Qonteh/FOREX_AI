@@ -66,16 +66,25 @@ async def startup_event():
         print("✅ Database initialized successfully")
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
-        print("\n📝 Troubleshooting:")
+        print("\n" + "="*60)
+        print("📝 Quick Fix - Run the setup script:")
+        print("="*60)
+        print("   python setup_database.py")
+        print("\n📝 Or follow these steps:")
         print("   1. Make sure MySQL is running")
-        print("   2. Create the database: CREATE DATABASE forex_ai;")
-        print("   3. Check your DATABASE_URL in .env file")
-        print("   4. Verify MySQL credentials (username/password)")
-        print("   5. If no password: DATABASE_URL=mysql+pymysql://root@localhost:3306/forex_ai")
-        print("   6. If with password: DATABASE_URL=mysql+pymysql://root:PASSWORD@localhost:3306/forex_ai")
-        print("   3. Check your DATABASE_URL in .env file")
-        print("   4. Verify MySQL credentials (username/password)")
-        print("   5. Example: DATABASE_URL=mysql+pymysql://root:YOUR_PASSWORD@localhost:3306/forex_ai")
+        print("   2. Create database:")
+        print("      mysql -u root -e \"CREATE DATABASE forex_ai;\"")
+        print("   3. Create tables:")
+        print("      mysql -u root forex_ai < db/init.sql")
+        print("\n📝 Database Connection:")
+        if ':' in db_url and '@' in db_url:
+            # Has password
+            print("   • With password: DATABASE_URL=mysql+pymysql://root:PASSWORD@localhost:3306/forex_ai")
+        else:
+            # No password
+            print("   • No password: DATABASE_URL=mysql+pymysql://root@localhost:3306/forex_ai")
+        print("\n📖 See DATABASE_SETUP.md for detailed instructions")
+        print("="*60)
 
 
 @app.get("/")

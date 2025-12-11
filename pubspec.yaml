@@ -34,6 +34,16 @@ dependencies:
   country_code_picker: ^3.0.0
   flutter_tts: ^4.0.2
   speech_to_text: ^7.0.0
+  
+  # Media & Permissions
+  image_picker: ^1.0.7
+  permission_handler: ^11.2.0
+  
+  # WebSocket
+  web_socket_channel: ^2.4.0
+  
+  # Sharing
+  share_plus: ^7.2.2
 
 dev_dependencies:
   flutter_test:

@@ -16,12 +16,19 @@ app = FastAPI(
 )
 
 # CORS middleware configuration
+# Allow web app to connect from any localhost port
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=[
+        "http://localhost:*",
+        "http://127.0.0.1:*",
+        "http://[::1]:*",
+        "*"  # Allow all origins for development
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 # Include routers

@@ -4,7 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
 import 'providers/theme_provider.dart';
-import 'providers/auth_provider_new.dart' as auth_new;
+import 'providers/auth_provider.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/auth/signup_screen.dart';
 import 'screens/dashboard/dashboard_screen.dart';
@@ -52,7 +52,7 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        ChangeNotifierProvider(create: (_) => auth_new.AuthProvider()),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, child) {
@@ -82,7 +82,7 @@ class MyApp extends StatelessWidget {
     return GoRouter(
       initialLocation: '/onboarding',
       redirect: (context, state) {
-        final authProvider = Provider.of<auth_new.AuthProvider>(context, listen: false);
+        final authProvider = Provider.of<AuthProvider>(context, listen: false);
         final isAuthenticated = authProvider.isAuthenticated;
         
         final isOnOnboarding = state.matchedLocation == '/onboarding';

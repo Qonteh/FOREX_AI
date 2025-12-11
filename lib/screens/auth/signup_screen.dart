@@ -405,11 +405,11 @@ class _SignupScreenState extends State<SignupScreen> {
                                       // Combine country code with phone number
                                       String fullPhoneNumber = _countryDialCode + _phoneController.text;
                                       
-                                      // FIREBASE REAL USER CREATION
+                                      // FastAPI user registration
                                       final success = await authProvider.signup(
-                                        _emailController.text.trim().toLowerCase(),
-                                        _passwordController.text,
-                                        _nameController.text.trim(),
+                                        email: _emailController.text.trim().toLowerCase(),
+                                        password: _passwordController.text,
+                                        name: _nameController.text.trim(),
                                         phoneNumber: fullPhoneNumber,
                                       );
                                       

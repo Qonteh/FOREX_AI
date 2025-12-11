@@ -1041,7 +1041,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                         ),
                         const SizedBox(height: 6),
                         Text(
-                          authProvider.currentUser?.name ?? 'Quantis Trader',
+                          authProvider.userName ?? 'Quantis Trader',
                           style: TextStyle(
                             color: AppColors.primaryNavy,
                             fontSize: 24,
@@ -1238,7 +1238,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
                         Consumer<AuthProvider>(
                           builder: (context, authProvider, child) {
                             return Text(
-                              authProvider.currentUser?.name ?? 'Quantis Trader',
+                              authProvider.userName ?? 'Quantis Trader',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 16,

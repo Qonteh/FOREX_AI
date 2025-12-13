@@ -27,7 +27,7 @@ void main() async {
   print('📱 Platform: ${kIsWeb ? "WEB" : "MOBILE"}');
   print('🔧 Debug Mode: ${kDebugMode ? "ENABLED" : "DISABLED"}');
   print('⏰ Timestamp: ${DateTime.now()}');
-  print('🌐 Backend: FastAPI @ http://localhost:8000');
+  print('🌐 Backend: FastAPI @ http://localhost:8001');
   
   // Set preferred orientations for mobile only
   if (!kIsWeb) {

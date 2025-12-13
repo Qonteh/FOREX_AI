@@ -417,11 +417,13 @@ class _SignupScreenState extends State<SignupScreen> {
                                         // SUCCESS - User created in FastAPI
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Account created successfully! Welcome to Quantis!'),
+                                            content: Text('Account created successfully! Please check your email to verify your account, then login.'),
                                             backgroundColor: Colors.green,
+                                            duration: Duration(seconds: 5),
                                           ),
                                         );
-                                        context.go('/dashboard');
+                                        // Navigate to login page instead of auto-login
+                                        context.go('/login');
                                       }
                                       // Error handling is done automatically by AuthProvider
                                     }

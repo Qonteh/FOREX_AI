@@ -101,8 +101,10 @@ class AuthProvider extends ChangeNotifier {
         phone: phoneNumber,
       );
 
-      _user = response['user'];
-      print('✅ Signup successful: ${_user?['email']}');
+      // DO NOT auto-login after signup - user needs to verify email first
+      // _user = response['user'];  // Commented out - no auto-login
+      print('✅ Signup successful: ${response['user']?['email']}');
+      print('📧 Email verification required before login');
       _setLoading(false);
       return true;
     } catch (e) {

@@ -3,7 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   // FastAPI backend URL - change this to match your backend
-  static const String baseUrl = 'http://localhost:8000';
+  static const String baseUrl = 'http://localhost:8001';
   late Dio _dio;
   static ApiService? _instance;
 

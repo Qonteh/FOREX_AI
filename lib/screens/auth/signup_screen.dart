@@ -405,23 +405,25 @@ class _SignupScreenState extends State<SignupScreen> {
                                       // Combine country code with phone number
                                       String fullPhoneNumber = _countryDialCode + _phoneController.text;
                                       
-                                      // FIREBASE REAL USER CREATION
+                                      // FastAPI user registration
                                       final success = await authProvider.signup(
-                                        _emailController.text.trim().toLowerCase(),
-                                        _passwordController.text,
-                                        _nameController.text.trim(),
+                                        email: _emailController.text.trim().toLowerCase(),
+                                        password: _passwordController.text,
+                                        name: _nameController.text.trim(),
                                         phoneNumber: fullPhoneNumber,
                                       );
                                       
                                       if (success && mounted) {
-                                        // SUCCESS - User created in Firebase
+                                        // SUCCESS - User created in FastAPI
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(
-                                            content: Text('Account created successfully! Welcome to Quantis!'),
+                                            content: Text('Account created successfully! Please check your email to verify your account, then login.'),
                                             backgroundColor: Colors.green,
+                                            duration: Duration(seconds: 5),
                                           ),
                                         );
-                                        context.go('/dashboard');
+                                        // Navigate to login page instead of auto-login
+                                        context.go('/login');
                                       }
                                       // Error handling is done automatically by AuthProvider
                                     }
@@ -500,7 +502,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Secure Firebase Registration',
+                      'Secure FastAPI Registration',
                       style: TextStyle(
                         color: AppColors.primaryPurple,
                         fontWeight: FontWeight.w600,
@@ -509,7 +511,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Your account will be securely stored in Firebase Authentication',
+                      'Your account will be securely stored in FastAPI Authentication',
                       style: TextStyle(
                         color: AppColors.primaryPurple.withOpacity(0.8),
                         fontSize: 12,

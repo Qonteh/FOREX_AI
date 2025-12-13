@@ -83,36 +83,29 @@ def create_tables():
         # Create engine
         engine = create_engine(db_url)
         
-        # Import models
-        from app.models import Base, User
+        # Import ALL models
+        from app.models import Base, User, Wallet, Referral, Transaction, Subscription
         
         # Check existing tables
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
         
-        if 'users' in existing_tables:
-            print("✅ 'users' table already exists")
-            
-            # Check if it has all required columns
-            columns = [col['name'] for col in inspector.get_columns('users')]
-            required_columns = ['id', 'email', 'phone', 'name', 'hashed_password', 
-                               'is_active', 'is_premium', 'created_at', 'updated_at']
-            
-            missing_columns = set(required_columns) - set(columns)
-            if missing_columns:
-                print(f"⚠️  Warning: Missing columns: {missing_columns}")
-                print("   You may need to run the migration script:")
-                print("   mysql -u root forex_ai < db/migrations/001_add_phone_to_users.sql")
-            else:
-                print("✅ All required columns exist")
-                
-                # Check indexes
-                indexes = inspector.get_indexes('users')
-                print(f"✅ Table has {len(indexes)} indexes")
-        else:
-            print("📝 Creating 'users' table...")
+        # List of all tables we need to create
+        required_tables = ['users', 'wallets', 'referrals', 'transactions', 'subscriptions']
+        missing_tables = set(required_tables) - set(existing_tables)
+        
+        if missing_tables:
+            print(f"📝 Creating {len(missing_tables)} missing table(s): {', '.join(missing_tables)}")
             Base.metadata.create_all(bind=engine)
-            print("✅ 'users' table created successfully")
+            print(f"✅ All tables created successfully")
+        else:
+            print("✅ All required tables already exist")
+        
+        # Verify each table
+        for table in required_tables:
+            if table in inspector.get_table_names():
+                columns = [col['name'] for col in inspector.get_columns(table)]
+                print(f"✅ '{table}' table exists with {len(columns)} columns")
         
         # Verify table structure
         with Session(engine) as session:
@@ -189,10 +182,17 @@ def main():
     print("\n" + "=" * 60)
     print("✅ Database setup completed successfully!")
     print("=" * 60)
+    print("\n📊 Database includes:")
+    print("   • users (with email verification, referrals, subscriptions)")
+    print("   • wallets (balance tracking)")
+    print("   • referrals (30% commission tracking)")
+    print("   • transactions (financial history)")
+    print("   • subscriptions (plan management)")
     print("\n💡 Next steps:")
-    print("   1. Start the server: uvicorn main:app --reload")
-    print("   2. Open API docs: http://localhost:8000/docs")
+    print("   1. Start the server: uvicorn main:app --reload --port 8001")
+    print("   2. Open API docs: http://localhost:8001/docs")
     print("   3. Test registration endpoint")
+    print("   4. Check console for email verification link (dev mode)")
     print()
 
 

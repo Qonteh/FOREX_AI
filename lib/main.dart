@@ -3,8 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/foundation.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';  // ADD THIS IMPORT!
-import 'services/firebase_service.dart';
 import 'providers/theme_provider.dart';
 import 'providers/auth_provider.dart';
 import 'screens/auth/login_screen.dart';
@@ -40,124 +38,13 @@ void main() async {
     print('✅ Mobile orientations set');
   }
   
-  // Initialize Firebase with EXTREME DETAILED logging
-  print('🔥🔥🔥 FIREBASE INITIALIZATION STARTING... 🔥🔥🔥');
-  print('📡 Attempting to connect to Firebase Backend...');
-  
-  bool firebaseInitialized = false;
-  String firebaseStatus = 'INITIALIZING';
-  
-  try {
-    print('🎯 Step 1: Calling FirebaseService.initialize()...');
-    await FirebaseService.initialize();
-    print('✅✅✅ Firebase Core: SUCCESSFULLY INITIALIZED! ✅✅✅');
-    
-    // INTENSIVE CONNECTION TESTING
-    print('🧪🧪🧪 STARTING INTENSIVE CONNECTION TESTS... 🧪🧪🧪');
-    final connected = await FirebaseService.instance.testConnection();
-    
-    if (connected) {
-      firebaseInitialized = true;
-      firebaseStatus = 'CONNECTED';
-      print('🎉🎉🎉 FIREBASE BACKEND: FULLY CONNECTED AND OPERATIONAL! 🎉🎉🎉');
-      
-      // Test individual services with detailed logging
-      await _testFirebaseServices();
-      
-    } else {
-      firebaseInitialized = false;
-      firebaseStatus = 'CONNECTION_FAILED';
-      print('❌❌❌ FIREBASE BACKEND: CONNECTION TEST FAILED! ❌❌❌');
-    }
-    
-  } catch (e, stackTrace) {
-    firebaseInitialized = false;
-    firebaseStatus = 'INITIALIZATION_FAILED';
-    print('💥💥💥 FIREBASE INITIALIZATION CATASTROPHIC FAILURE! 💥💥💥');
-    print('🚨 ERROR: $e');
-    print('📊 FULL STACK TRACE:');
-    print(stackTrace.toString());
-  }
-  
-  print('📊📊📊 FIREBASE STATUS SUMMARY 📊📊📊');
-  print('   ✅ Initialized: $firebaseInitialized');
-  print('   🔗 Status: $firebaseStatus');
-  print('   🌐 Backend Communication: ${firebaseInitialized ? "🟢 ACTIVE" : "🔴 INACTIVE"}');
-  print('   📱 Project ID: safariapp-5965d');
-  
   print('🚀🚀🚀 LAUNCHING QUANTIS TRADING APP... 🚀🚀🚀');
   
-  runApp(MyApp(
-    firebaseEnabled: firebaseInitialized,
-    firebaseStatus: firebaseStatus,
-  ));
-}
-
-// Test all Firebase services individually with EXTREME DETAIL
-Future<void> _testFirebaseServices() async {
-  try {
-    print('🔬🔬🔬 TESTING INDIVIDUAL FIREBASE SERVICES 🔬🔬🔬');
-    
-    // Test 1: Authentication Service
-    print('🔐 TESTING FIREBASE AUTHENTICATION...');
-    final authService = FirebaseService.instance.auth;
-    final currentUser = authService.currentUser;
-    print('   ✅ Auth Service Status: OPERATIONAL');
-    print('   👤 Current User: ${currentUser?.email ?? "No current user logged in"}');
-    print('   🆔 User ID: ${currentUser?.uid ?? "N/A"}');
-    
-    // Test 2: Firestore Service
-    print('🗄️ TESTING FIRESTORE DATABASE...');
-    final firestoreService = FirebaseService.instance.firestore;
-    
-    final testData = {
-      'timestamp': FieldValue.serverTimestamp(),
-      'platform': kIsWeb ? 'web_browser' : 'mobile_device',
-      'test_type': 'comprehensive_app_initialization',
-      'app_version': '1.0.0',
-      'project_id': 'safariapp-5965d',
-      'test_id': DateTime.now().millisecondsSinceEpoch.toString(),
-    };
-    
-    print('   📝 Writing test document to Firestore...');
-    await firestoreService.collection('quantis_connection_tests').doc('startup_${DateTime.now().millisecondsSinceEpoch}').set(testData);
-    print('   ✅✅✅ Firestore WRITE TEST: SUCCESSFUL! ✅✅✅');
-    
-    // Test 3: Read from Firestore
-    print('   📖 Reading test document from Firestore...');
-    final testDoc = await firestoreService.collection('quantis_connection_tests').limit(1).get();
-    if (testDoc.docs.isNotEmpty) {
-      print('   ✅✅✅ Firestore READ TEST: SUCCESSFUL! ✅✅✅');
-      print('   📊 Retrieved ${testDoc.docs.length} document(s)');
-      print('   🔍 Latest document data: ${testDoc.docs.first.data()}');
-    }
-    
-    // Test 4: Real-time listener
-    print('   📡 Testing real-time listener...');
-    final stream = firestoreService.collection('quantis_connection_tests').limit(1).snapshots();
-    await stream.take(1).forEach((snapshot) {
-      print('   ✅✅✅ Firestore REAL-TIME LISTENER: WORKING! ✅✅✅');
-      print('   📊 Real-time snapshot contains ${snapshot.docs.length} documents');
-    });
-    
-    print('🎉🎉🎉 ALL FIREBASE SERVICES: FULLY OPERATIONAL! 🎉🎉🎉');
-    
-  } catch (e, stackTrace) {
-    print('❌❌❌ FIREBASE SERVICES TEST FAILED! ❌❌❌');
-    print('🚨 Error: $e');
-    print('📊 Stack trace: $stackTrace');
-  }
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  final bool firebaseEnabled;
-  final String firebaseStatus;
-  
-  const MyApp({
-    super.key, 
-    required this.firebaseEnabled,
-    required this.firebaseStatus,
-  });
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -175,82 +62,7 @@ class MyApp extends StatelessWidget {
             themeMode: ThemeMode.light,
             routerConfig: _router,
             builder: (context, child) {
-              return Scaffold(
-                body: Stack(
-                  children: [
-                    child ?? const SizedBox(),
-                    // Firebase Connection Indicator - MORE VISIBLE
-                    Positioned(
-                      top: 50,
-                      right: 16,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: firebaseEnabled ? Colors.green.shade600 : Colors.red.shade600,
-                          borderRadius: BorderRadius.circular(20),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (firebaseEnabled ? Colors.green : Colors.red).withOpacity(0.3),
-                              blurRadius: 8,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              firebaseEnabled ? Icons.cloud_done : Icons.cloud_off,
-                              color: Colors.white,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              firebaseStatus,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // Debug Info - BOTTOM LEFT
-                    if (kDebugMode)
-                      Positioned(
-                        bottom: 20,
-                        left: 16,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.7),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'Firebase: ${firebaseEnabled ? "🟢" : "🔴"}',
-                                style: const TextStyle(color: Colors.white, fontSize: 10),
-                              ),
-                              Text(
-                                'Project: safariapp-5965d',
-                                style: const TextStyle(color: Colors.white, fontSize: 10),
-                              ),
-                              Text(
-                                'Platform: ${kIsWeb ? "Web" : "Mobile"}',
-                                style: const TextStyle(color: Colors.white, fontSize: 10),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              );
+              return child ?? const SizedBox();
             },
           );
         },

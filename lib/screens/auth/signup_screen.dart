@@ -414,7 +414,7 @@ class _SignupScreenState extends State<SignupScreen> {
                                       );
                                       
                                       if (success && mounted) {
-                                        // SUCCESS - User created in Firebase
+                                        // SUCCESS - User created successfully
                                         ScaffoldMessenger.of(context).showSnackBar(
                                           const SnackBar(
                                             content: Text('Account created successfully! Welcome to Quantis!'),
@@ -500,7 +500,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Secure Firebase Registration',
+                      'Secure Registration',
                       style: TextStyle(
                         color: AppColors.primaryPurple,
                         fontWeight: FontWeight.w600,
@@ -509,7 +509,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Your account will be securely stored in Firebase Authentication',
+                      'Your account will be securely stored',
                       style: TextStyle(
                         color: AppColors.primaryPurple.withOpacity(0.8),
                         fontSize: 12,

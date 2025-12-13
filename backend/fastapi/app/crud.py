@@ -70,6 +70,26 @@ def get_user_by_verification_token(db: Session, token: str) -> Optional[User]:
     return db.query(User).filter(User.email_verification_token == token).first()
 
 
+def authenticate_user(db: Session, email: str, password: str) -> Optional[User]:
+    """
+    Authenticate user with email and password.
+    
+    Args:
+        db: Database session
+        email: User's email address
+        password: Plain text password
+        
+    Returns:
+        User object if authentication successful, None otherwise
+    """
+    user = get_user_by_email(db, email.lower())
+    if not user:
+        return None
+    if not verify_password(password, user.hashed_password):
+        return None
+    return user
+
+
 def create_user(db: Session, user: UserCreate, verification_token: str, referred_by_code: Optional[str] = None) -> User:
     """
     Create a new user with wallet and referral tracking.

@@ -1,7 +1,7 @@
 """
 Authentication routes for user registration and login.
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from typing import Optional
@@ -232,30 +232,42 @@ async def login(
 
 @router.get("/me", response_model=UserOut)
 async def get_current_user(
-    token: str,
+    request: Request,
     db: Session = Depends(get_db)
 ):
     """
     Get current authenticated user.
     
-    Args:
-        token: JWT access token
+    Expects Authorization header: Bearer <token>
         
     Returns:
         Current user data
     """
+    authorization = request.headers.get("Authorization")
+    
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    token = authorization.replace("Bearer ", "")
+    
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Could not validate credentials"
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
             )
     except jwt.PyJWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials"
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
         )
     
     user = crud.get_user_by_id(db, user_id)

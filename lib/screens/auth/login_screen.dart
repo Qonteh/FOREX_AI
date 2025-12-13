@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/app_logo.dart';
 import '../../theme/app_colors.dart';
-import '../../services/firebase_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -68,45 +67,7 @@ class _LoginScreenState extends State<LoginScreen> {
               
               const SizedBox(height: 32),
               
-              // TEST FIREBASE CONNECTION BUTTON
-              Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                child: ElevatedButton(
-                  onPressed: () async {
-                    try {
-                      final service = FirebaseService.instance;
-                      final connected = await service.testConnection();
-                      
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            connected 
-                              ? '🔥 Firebase Connected Successfully!' 
-                              : '❌ Firebase Connection Failed!',
-                          ),
-                          backgroundColor: connected ? Colors.green : Colors.red,
-                          duration: const Duration(seconds: 3),
-                        ),
-                      );
-                    } catch (e) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('❌ Firebase Error: $e'),
-                          backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 5),
-                        ),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('🔥 Test Firebase Connection'),
-                ),
-              ),
-              
-              // Firebase Error Display
+              // Error Display
               Consumer<AuthProvider>(
                 builder: (context, authProvider, _) {
                   if (authProvider.error != null) {
@@ -279,7 +240,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ),
                                   )
                                 : const Text(
-                                    '🔐 Sign In with Firebase',
+                                    '🔐 Sign In',
                                     style: TextStyle(
                                       fontSize: 16,
                                       fontWeight: FontWeight.w600,
@@ -317,42 +278,7 @@ class _LoginScreenState extends State<LoginScreen> {
               
               const SizedBox(height: 40),
               
-              // DEBUG INFO
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: AppColors.primaryPurple.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.primaryPurple.withOpacity(0.3)),
-                ),
-                child: Column(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: AppColors.primaryPurple,
-                      size: 24,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '🔥 Firebase Authentication Active',
-                      style: TextStyle(
-                        color: AppColors.primaryPurple,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Test Firebase connection first, then create account to login!',
-                      style: TextStyle(
-                        color: AppColors.primaryPurple.withOpacity(0.8),
-                        fontSize: 12,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
+
             ],
           ),
         ),

@@ -135,7 +135,7 @@ class Transaction(Base):
     # Description and metadata
     description = Column(Text, nullable=True)
     reference_id = Column(String(255), nullable=True, index=True)  # External reference (e.g., PayPal transaction ID)
-    metadata = Column(Text, nullable=True)  # JSON string for additional data
+    meta_data = Column(Text, nullable=True)  # JSON string for additional data (renamed from metadata to avoid SQLAlchemy conflict)
     
     # Related referral (if applicable)
     referral_id = Column(String(36), ForeignKey('referrals.id'), nullable=True)

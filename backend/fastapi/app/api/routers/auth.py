@@ -11,6 +11,7 @@ import jwt
 from app.database import get_db
 from app.schemas import UserCreate, UserOut, UserLogin, Token
 from app import crud
+from app.email_service import EmailService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -138,11 +139,28 @@ async def register(
             detail=detail
         )
     
+    # Generate email verification token
+    email_service = EmailService()
+    verification_token = email_service.generate_verification_token()
+    
+    # Extract referred_by_code if present
+    referred_by_code = getattr(user_data, 'referred_by_code', None)
+    
     # Create new user
     try:
         print(f"📝 Creating new user...")
-        user = crud.create_user(db, user_data)
+        user = crud.create_user(db, user_data, verification_token, referred_by_code)
         print(f"✅ User created successfully: ID={user.id}")
+        
+        # Send verification email
+        try:
+            print(f"📧 Sending verification email to {user.email}...")
+            email_service.send_verification_email(user.email, user.name, verification_token)
+            print(f"✅ Verification email sent")
+        except Exception as email_error:
+            print(f"⚠️  Warning: Failed to send verification email: {str(email_error)}")
+            # Don't fail registration if email fails
+            pass
     except Exception as e:
         # Log the full error for debugging
         import traceback

@@ -20,6 +20,7 @@ plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
     id("com.android.application") version "8.3.0" apply false  // UPGRADED FROM 8.1.0
     id("org.jetbrains.kotlin.android") version "1.8.10" apply false  // UPGRADED FROM 1.7.10
+    id("com.google.gms.google-services") version "4.4.0" apply false
 }
 
 include(":app")
